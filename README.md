@@ -1,12 +1,14 @@
 # AgenticOS
 
-AgenticOS is a local-first, multi-agent coding platform. The first workload is coding, and model inference is routed to a locally hosted Ollama instance. The initial workflow uses four focused roles: Planner, Coder, Reviewer, and Test Planner.
+AgenticOS is a local-first, multi-agent coding platform. Model inference is routed to a locally hosted Ollama instance. The initial workflow uses four focused roles: Planner, Coder, Reviewer, and Test Planner.
 
 ## Principles
 
-- **Local-first inference:** Ollama is the only model provider in this phase; there is no paid external model API fallback.
+- **Local-first inference:** Ollama is the only model provider; there is no paid external model API fallback.
 - **Explicit agent roles:** each workflow stage has a defined responsibility.
-- **Bounded behavior:** generated code is returned as text; this phase does not execute shell commands or apply generated patches.
+- **Bounded execution:** runs have IDs, lifecycle states, a concurrency limit, and a timeout.
+- **Controlled tools:** agent capabilities must be explicitly registered. No shell tool is enabled.
+- **Safe output boundary:** generated code is returned as text; this phase does not execute shell commands or apply generated patches.
 - **Workspace awareness:** workspace identifiers and resolved paths are checked against a configured root.
 
 ## Requirements
@@ -23,62 +25,45 @@ ollama pull qwen2.5-coder:3b
 
 ## Setup
 
-Clone the repository and create a virtual environment:
-
 ```bash
 git clone https://github.com/poojabhavsar28/AgenticOS.git
 cd AgenticOS
+git switch feature/phase-2-execution
 python -m venv .venv
 ```
 
-Activate it:
-
-- Windows PowerShell: `.venv\\Scripts\\Activate.ps1`
-- macOS/Linux: `source .venv/bin/activate`
-
-Install the project:
+Activate the environment (PowerShell: `.venv\Scripts\Activate.ps1`; macOS/Linux: `source .venv/bin/activate`), then install:
 
 ```bash
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
 
-Copy `.env.example` to `.env` and adjust the local settings if required. The default Ollama endpoint is `http://localhost:11434`.
+Copy `.env.example` to `.env` and adjust settings. Defaults: Ollama at `http://localhost:11434`, 300-second run timeout, and two concurrent runs.
 
-## Run the API
+## Run
 
 ```bash
 uvicorn agenticos.api.main:app --reload
 ```
 
-Check service health:
+Health and readiness: `GET /health`, `GET /ready`.
+
+Submit a run:
 
 ```bash
-curl http://127.0.0.1:8000/health
-curl http://127.0.0.1:8000/ready
+curl -X POST http://127.0.0.1:8000/v1/runs -H "Content-Type: application/json" -d '{"task":"Write a Python function that validates an email address."}'
 ```
 
-Submit a coding task:
+Inspect its checkpoint with `GET /v1/runs/{run_id}`. Checkpoints are process-local and are lost on restart.
+
+## Tests
 
 ```bash
-curl -X POST http://127.0.0.1:8000/v1/runs \
-  -H "Content-Type: application/json" \
-  -d '{"task":"Write a Python function that validates an email address."}'
-```
-
-The response contains the plan, proposed code, review, and test plan. The API does not claim that generated code has been applied or executed.
-
-## Tests and lint
-
-```bash
-pytest -q
 ruff check .
+pytest -q
 ```
-
-## Architecture
-
-See [docs/architecture.md](docs/architecture.md) for the initial request flow and security boundaries.
 
 ## Current limitations
 
-This is an initial foundation, not a production-safe autonomous coding environment. Authentication, durable run history, per-user authorization, rate limits, isolated code execution, patch approval, and comprehensive audit logging are not implemented yet. Workspace path validation alone is not an operating-system sandbox. Review generated code before using it.
+This remains a development foundation, not a production-safe autonomous coding environment. Authentication, durable run history, per-user authorization, rate limits, isolated code execution, patch approval, and comprehensive audit logging are not implemented. Workspace path validation alone is not an operating-system sandbox. Review generated code before use.
