@@ -94,3 +94,32 @@ def test_invalid_session_identifier_is_rejected(fake_model, tmp_path) -> None:
         "/v1/runs", json={"task": "hello", "session_id": "../other"}
     )
     assert response.status_code == 422
+
+
+
+def test_repository_index_refresh_and_search_endpoints(fake_model, tmp_path) -> None:
+    workspace = tmp_path / "default"
+    workspace.mkdir()
+    (workspace / "service.py").write_text(
+        "def calculate_total(items): return sum(items)", encoding="utf-8"
+    )
+    client = make_client(fake_model, tmp_path)
+
+    refreshed = client.post("/v1/workspaces/default/repository-index")
+    assert refreshed.status_code == 200
+    assert refreshed.json()["indexed_files"] == 1
+
+    searched = client.get(
+        "/v1/workspaces/default/repository-search",
+        params={"q": "calculate total"},
+    )
+    assert searched.status_code == 200
+    assert searched.json()[0]["path"] == "service.py"
+
+
+def test_repository_index_endpoints_reject_workspace_escape(fake_model, tmp_path) -> None:
+    client = make_client(fake_model, tmp_path)
+    assert client.post("/v1/workspaces/../outside/repository-index").status_code in {404, 422}
+    assert client.get(
+        "/v1/workspaces/../outside/repository-search", params={"q": "needle"}
+    ).status_code in {404, 422}
