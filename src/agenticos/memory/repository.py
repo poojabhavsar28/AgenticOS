@@ -1,5 +1,6 @@
 """Bounded, workspace-isolated repository indexing and keyword search."""
 
+import os
 import re
 import sqlite3
 from pathlib import Path
@@ -64,7 +65,7 @@ class RepositoryIndex:
 
     def _iter_text_files(self, base: Path):
         count = 0
-        for directory, dirnames, filenames in __import__("os").walk(base, followlinks=False):
+        for directory, dirnames, filenames in os.walk(base, followlinks=False):
             current = Path(directory)
             dirnames[:] = sorted(
                 name for name in dirnames
@@ -146,7 +147,8 @@ class RepositoryIndex:
         for row in rows:
             content = row["content"]
             lowered = content.lower()
-            first = min((lowered.find(token.lower()) for token in tokens if lowered.find(token.lower()) >= 0), default=0)
+            positions = [lowered.find(token.lower()) for token in tokens]
+            first = min((position for position in positions if position >= 0), default=0)
             start = max(0, first - self.excerpt_characters // 4)
             excerpt = content[start : start + self.excerpt_characters]
             if start:
