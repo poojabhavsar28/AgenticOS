@@ -1,6 +1,9 @@
-"""Explicit tool contracts and registry for agent capabilities."""
+"""Explicit tool contracts and permission-checked registry."""
 
 from typing import Protocol
+
+from agenticos.security.audit import AuditLog
+from agenticos.security.policy import PermissionPolicy
 
 
 class AgentTool(Protocol):
@@ -11,10 +14,16 @@ class AgentTool(Protocol):
 
 
 class ToolRegistry:
-    """Registry that exposes only explicitly registered tools to the runtime."""
+    """Registry that requires explicit authorization before tool execution."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        policy: PermissionPolicy | None = None,
+        audit_log: AuditLog | None = None,
+    ) -> None:
         self._tools: dict[str, AgentTool] = {}
+        self.policy = policy or PermissionPolicy()
+        self.audit_log = audit_log or AuditLog()
 
     def register(self, tool: AgentTool) -> None:
         name = tool.name.strip()
@@ -29,6 +38,22 @@ class ToolRegistry:
             return self._tools[name]
         except KeyError as exc:
             raise KeyError(f"Unknown agent tool: {name}") from exc
+
+    async def execute(
+        self,
+        name: str,
+        arguments: dict[str, object],
+        *,
+        principal_id: str,
+    ) -> dict[str, object]:
+        tool = self.get(name)
+        try:
+            self.policy.authorize(principal_id, "execute", name)
+        except PermissionError:
+            self.audit_log.record(principal_id, "execute", name, "denied")
+            raise
+        self.audit_log.record(principal_id, "execute", name, "allowed")
+        return await tool.execute(arguments)
 
     def names(self) -> tuple[str, ...]:
         return tuple(sorted(self._tools))
