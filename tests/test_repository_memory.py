@@ -80,3 +80,18 @@ def test_refresh_rejects_too_many_files(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="file limit"):
         index.refresh("demo")
+
+
+
+def test_refresh_enforces_total_repository_byte_budget(tmp_path: Path) -> None:
+    root = tmp_path / "workspaces"
+    workspace = root / "demo"
+    workspace.mkdir(parents=True)
+    (workspace / "a.txt").write_text("123456", encoding="utf-8")
+    (workspace / "b.txt").write_text("abcdef", encoding="utf-8")
+    index = RepositoryIndex(
+        root, tmp_path / "index.sqlite3", max_file_bytes=10, max_total_bytes=10
+    )
+
+    with pytest.raises(ValueError, match="byte limit"):
+        index.refresh("demo")
