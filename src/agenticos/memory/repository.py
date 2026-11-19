@@ -91,7 +91,7 @@ class RepositoryIndex:
                     if b"\x00" in raw:
                         continue
                     content = raw.decode("utf-8")
-                except (OSError, UnicodeDecodeError, ValueError):
+                except (OSError, UnicodeDecodeError):
                     continue
                 count += 1
                 if count > self.max_files:
