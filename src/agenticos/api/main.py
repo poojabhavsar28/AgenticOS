@@ -8,6 +8,8 @@ from agenticos.config import Settings, get_settings
 from agenticos.contracts import RunRequest, RunResponse
 from agenticos.inference.ollama import OllamaClient
 from agenticos.logging import configure_logging, get_logger
+from agenticos.runtime.checkpoints import InMemoryCheckpointStore
+from agenticos.runtime.execution import ExecutionManager, RunExecutionError
 from agenticos.runtime.graph import CodingWorkflow
 from agenticos.security.workspace import WorkspaceBoundaryError, resolve_workspace_path
 
@@ -20,11 +22,18 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         config.ollama_base_url, config.ollama_model, config.ollama_timeout_seconds
     )
     workflow = CodingWorkflow(model)
+    execution = ExecutionManager(
+        workflow,
+        InMemoryCheckpointStore(),
+        max_concurrent_runs=config.max_concurrent_runs,
+        timeout_seconds=config.run_timeout_seconds,
+    )
 
-    app = FastAPI(title=config.app_name, version="0.1.0")
+    app = FastAPI(title=config.app_name, version="0.2.0")
     app.state.settings = config
     app.state.model = model
     app.state.workflow = workflow
+    app.state.execution = execution
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -41,21 +50,32 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     async def create_run(payload: RunRequest, request: Request) -> RunResponse:
         try:
             resolve_workspace_path(config.workspace_root, payload.workspace)
-            result = await request.app.state.workflow.run(payload.task)
+            record = await request.app.state.execution.execute(payload.task)
         except WorkspaceBoundaryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except Exception as exc:
-            logger.exception("agent_run_failed", workspace=payload.workspace)
-            raise HTTPException(status_code=502, detail="Agent workflow failed") from exc
+        except RunExecutionError as exc:
+            logger.exception("agent_run_failed", run_id=exc.record.run_id)
+            raise HTTPException(
+                status_code=502,
+                detail={"run_id": exc.record.run_id, "error": exc.record.error},
+            ) from exc
 
+        result = record.result or {}
         return RunResponse(
-            run_id=str(uuid4()),
+            run_id=record.run_id or str(uuid4()),
             status="completed",
-            plan=result.get("plan", ""),
-            code=result.get("code", ""),
-            review=result.get("review", ""),
-            test_plan=result.get("test_plan", ""),
+            plan=str(result.get("plan", "")),
+            code=str(result.get("code", "")),
+            review=str(result.get("review", "")),
+            test_plan=str(result.get("test_plan", "")),
         )
+
+    @app.get("/v1/runs/{run_id}")
+    async def get_run(run_id: str, request: Request) -> dict[str, object]:
+        snapshot = await request.app.state.execution.get_snapshot(run_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        return snapshot
 
     return app
 
