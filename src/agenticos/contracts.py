@@ -23,3 +23,22 @@ class RunResponse(BaseModel):
     code: str
     review: str
     test_plan: str
+
+
+class WorkspaceStageRequest(BaseModel):
+    relative_path: str = Field(min_length=1, max_length=500)
+    content: str = Field(max_length=1_000_000)
+
+
+class WorkspaceReadResponse(BaseModel):
+    workspace: str
+    relative_path: str
+    content: str
+
+
+class WorkspaceChangeResponse(BaseModel):
+    change_id: str
+    workspace: str
+    relative_path: str
+    size_bytes: int
+    status: Literal["pending"] = "pending"
