@@ -5,6 +5,7 @@ from typing import TypedDict
 
 class AgentState(TypedDict, total=False):
     task: str
+    memory_context: str
     plan: str
     code: str
     review: str
