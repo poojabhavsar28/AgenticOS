@@ -9,7 +9,7 @@ from agenticos.runtime.execution import ExecutionManager, RunExecutionError, Run
 
 
 class SuccessfulWorkflow:
-    async def run(self, task: str) -> dict[str, str]:
+    async def run(self, task: str, memory_context: str = "") -> dict[str, str]:
         return {"task": task, "code": "pass"}
 
 
