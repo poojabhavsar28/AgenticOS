@@ -13,6 +13,7 @@ AgenticOS is a local-first, multi-agent coding platform. Model inference is rout
 - **Workspace awareness:** workspace identifiers and resolved paths are checked against a configured root.
 - **Agent collaboration:** capability-based delegation, dependency-aware task coordination, and bounded in-process agent messaging.
 - **Workspace operations:** UTF-8 file reads, bounded listings, and staged writes that require explicit approval.
+- **Evaluation gates:** deterministic checks for all four workflow stages, output bounds, required terms, and aggregate pass-rate thresholds.
 
 ## Requirements
 
