@@ -36,9 +36,7 @@ class WorkspaceFileService:
         self._staged: dict[str, StagedChange] = {}
 
     def _workspace(self, workspace: str) -> Path:
-        path = resolve_workspace_path(self.workspace_root, workspace)
-        path.mkdir(parents=True, exist_ok=True)
-        return path
+        return resolve_workspace_path(self.workspace_root, workspace)
 
     def _file_path(self, workspace: str, relative_path: str) -> Path:
         if not relative_path or Path(relative_path).is_absolute():
