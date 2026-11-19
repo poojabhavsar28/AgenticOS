@@ -6,6 +6,7 @@ import pytest
 
 from agenticos.runtime.checkpoints import InMemoryCheckpointStore
 from agenticos.runtime.execution import ExecutionManager, RunExecutionError, RunStatus
+from agenticos.runtime.events import SQLiteRunEventStore
 
 
 class SuccessfulWorkflow:
@@ -90,3 +91,41 @@ async def test_execution_respects_concurrency_limit() -> None:
 def test_execution_rejects_invalid_limits() -> None:
     with pytest.raises(ValueError):
         ExecutionManager(SuccessfulWorkflow(), InMemoryCheckpointStore(), max_concurrent_runs=0)
+
+
+
+@pytest.mark.asyncio
+async def test_execution_emits_lifecycle_events_without_task_content(tmp_path) -> None:
+    events = SQLiteRunEventStore(tmp_path / "events.sqlite3")
+    manager = ExecutionManager(
+        SuccessfulWorkflow(),
+        InMemoryCheckpointStore(),
+        event_store=events,
+    )
+
+    record = await manager.execute("private task text")
+
+    emitted = events.list_events(record.run_id)
+    assert [event.event_type for event in emitted] == [
+        "queued",
+        "started",
+        "completed",
+    ]
+    assert all("private task text" not in str(event.data) for event in emitted)
+
+
+@pytest.mark.asyncio
+async def test_execution_emits_failure_event(tmp_path) -> None:
+    events = SQLiteRunEventStore(tmp_path / "events.sqlite3")
+    manager = ExecutionManager(
+        FailingWorkflow(),
+        InMemoryCheckpointStore(),
+        event_store=events,
+    )
+
+    with pytest.raises(RunExecutionError) as captured:
+        await manager.execute("private failing task")
+
+    emitted = events.list_events(captured.value.record.run_id)
+    assert [event.event_type for event in emitted] == ["queued", "started", "failed"]
+    assert all("private implementation detail" not in str(event.data) for event in emitted)
