@@ -21,8 +21,8 @@ from agenticos.memory.context import build_memory_context
 from agenticos.memory.repository import RepositoryIndex
 from agenticos.memory.store import SQLiteMemoryStore
 from agenticos.runtime.checkpoints import SQLiteCheckpointStore
-from agenticos.runtime.execution import ExecutionManager, RunExecutionError
 from agenticos.runtime.events import SQLiteRunEventStore
+from agenticos.runtime.execution import ExecutionManager, RunExecutionError
 from agenticos.runtime.graph import CodingWorkflow
 from agenticos.security.audit import SQLiteAuditLog
 from agenticos.security.auth import BearerTokenAuthenticator
