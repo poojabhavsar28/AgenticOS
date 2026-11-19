@@ -6,7 +6,7 @@ AgenticOS is a local-first, multi-agent coding platform. Model inference is rout
 
 - **Local-first inference:** Ollama is the only model provider; there is no paid external model API fallback.
 - **Explicit agent roles:** each workflow stage has a defined responsibility.
-- **Bounded execution:** runs have IDs, lifecycle states, a concurrency limit, and a timeout.
+- **Bounded execution:** runs have IDs, lifecycle states, a concurrency limit, a timeout, and durable lifecycle event history.
 - **Persistent memory:** SQLite stores session history, workspace-scoped project notes, and a bounded local repository index. Repository retrieval is opt-in per run.
 - **Controlled tools:** agent capabilities must be explicitly registered. No shell tool is enabled.
 - **Safe output boundary:** generated code is returned as text; this phase does not execute shell commands or apply generated patches.
@@ -69,8 +69,10 @@ curl -X POST http://127.0.0.1:8000/v1/runs -H "Content-Type: application/json" -
 - Set `include_repository_context: true` in a run request to include matching repository excerpts as untrusted context.
 - `PUT /v1/workspaces/{workspace}/context` stores a project note. JSON body: `{"source_key":"architecture.md","content":"Use async FastAPI routes","metadata":{"kind":"decision"}}`.
 - `GET /v1/runs/{run_id}` returns the run checkpoint.
+- `GET /v1/runs/{run_id}/events` returns bounded durable lifecycle events; use `after_event_id` to resume.
+- `GET /v1/runs/{run_id}/events/stream` streams Server-Sent Events and resumes from the `Last-Event-ID` header.
 
-SQLite history, run checkpoints, and API audit events persist across restarts in local database files. Configure `OPERATIONS_DATABASE_PATH` to change the checkpoint/audit database location.
+SQLite history, run checkpoints, API audit events, and bounded run lifecycle events persist across restarts in local database files. SSE is a best-effort local stream; clients should reconnect using the last received event ID. Configure `OPERATIONS_DATABASE_PATH` to change the checkpoint/audit database location.
 
 ## Tests
 
