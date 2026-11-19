@@ -4,12 +4,15 @@ from fastapi.testclient import TestClient
 
 from agenticos.api.main import create_app
 from agenticos.config import Settings
+from agenticos.runtime.checkpoints import SQLiteCheckpointStore
+from agenticos.security.audit import SQLiteAuditLog
 
 
 def make_client(fake_model, tmp_path):
     settings = Settings(
         workspace_root=tmp_path,
         memory_database_path=tmp_path / "memory.sqlite3",
+        operations_database_path=tmp_path / "operations.sqlite3",
     )
     return TestClient(create_app(settings, model_client=fake_model))
 
@@ -39,6 +42,13 @@ def test_run_endpoint_returns_agent_outputs_and_status(fake_model, tmp_path) -> 
     status = client.get(f"/v1/runs/{body['run_id']}")
     assert status.status_code == 200
     assert status.json()["status"] == "completed"
+    import asyncio
+
+    checkpoint = SQLiteCheckpointStore(tmp_path / "operations.sqlite3")
+    snapshot = asyncio.run(checkpoint.load(body["run_id"]))
+    assert snapshot is not None and snapshot["status"] == "completed"
+    events = SQLiteAuditLog(tmp_path / "operations.sqlite3").events()
+    assert any(event.resource == "/v1/runs" for event in events)
 
     history = client.get("/v1/sessions/session-a/messages")
     assert history.status_code == 200
