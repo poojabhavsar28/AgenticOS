@@ -149,8 +149,6 @@ class RepositoryIndex:
             lowered = content.lower()
             positions = [lowered.find(token.lower()) for token in tokens]
             first = min((position for position in positions if position >= 0), default=0)
-            positions = [lowered.find(token.lower()) for token in tokens]
-            first = min((position for position in positions if position >= 0), default=0)
             start = max(0, first - self.excerpt_characters // 4)
             excerpt = content[start : start + self.excerpt_characters]
             if start:
