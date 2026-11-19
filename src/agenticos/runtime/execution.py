@@ -11,7 +11,7 @@ from agenticos.runtime.checkpoints import CheckpointStore
 
 
 class Workflow(Protocol):
-    async def run(self, task: str) -> dict[str, Any]:
+    async def run(self, task: str, memory_context: str = "") -> dict[str, Any]:
         """Run the configured multi-agent workflow."""
 
 
@@ -46,7 +46,7 @@ class RunExecutionError(RuntimeError):
 
 
 class ExecutionManager:
-    """Controls concurrency, timeouts, run states, and checkpoint updates."""
+    """Controls concurrency, timeouts, and checkpoint updates."""
 
     def __init__(
         self,
@@ -70,10 +70,9 @@ class ExecutionManager:
         await self.checkpoints.save(record.run_id, record.snapshot())
 
     async def get_snapshot(self, run_id: str) -> dict[str, object] | None:
-        """Retrieve a stored run snapshot."""
         return await self.checkpoints.load(run_id)
 
-    async def execute(self, task: str) -> RunRecord:
+    async def execute(self, task: str, memory_context: str = "") -> RunRecord:
         now = datetime.now(UTC).isoformat()
         record = RunRecord(
             run_id=str(uuid4()),
@@ -88,7 +87,7 @@ class ExecutionManager:
                 record.status = RunStatus.RUNNING
                 await self._checkpoint(record)
                 record.result = await asyncio.wait_for(
-                    self.workflow.run(task),
+                    self.workflow.run(task, memory_context=memory_context),
                     timeout=self.timeout_seconds,
                 )
                 record.status = RunStatus.COMPLETED
