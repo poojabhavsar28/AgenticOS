@@ -34,7 +34,10 @@ class CodingWorkflow:
         return {"review": await self.model.generate(prompt, system=REVIEWER)}
 
     async def _test_plan(self, state: AgentState) -> dict[str, str]:
-        prompt = f"Task:\n{state['task']}\n\nSolution:\n{state.get('code', '')}\n\nReview:\n{state.get('review', '')}"
+        prompt = (
+            f"Task:\n{state['task']}\n\nSolution:\n{state.get('code', '')}"
+            f"\n\nReview:\n{state.get('review', '')}"
+        )
         return {"test_plan": await self.model.generate(prompt, system=TEST_PLANNER)}
 
     async def run(self, task: str) -> AgentState:
