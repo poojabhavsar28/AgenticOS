@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from agenticos.runtime.checkpoints import CheckpointStore
+from agenticos.runtime.events import SQLiteRunEventStore
 
 
 class Workflow(Protocol):
@@ -55,6 +56,7 @@ class ExecutionManager:
         *,
         max_concurrent_runs: int = 2,
         timeout_seconds: float = 300.0,
+        event_store: SQLiteRunEventStore | None = None,
     ) -> None:
         if max_concurrent_runs < 1:
             raise ValueError("max_concurrent_runs must be at least 1")
@@ -62,8 +64,13 @@ class ExecutionManager:
             raise ValueError("timeout_seconds must be positive")
         self.workflow = workflow
         self.checkpoints = checkpoints
+        self.event_store = event_store
         self.timeout_seconds = timeout_seconds
         self._semaphore = asyncio.Semaphore(max_concurrent_runs)
+
+    def _emit(self, record: RunRecord, event_type: str) -> None:
+        if self.event_store is not None:
+            self.event_store.append(record.run_id, event_type, {"status": record.status.value})
 
     async def _checkpoint(self, record: RunRecord) -> None:
         record.updated_at = datetime.now(UTC).isoformat()
@@ -83,20 +90,24 @@ class ExecutionManager:
         )
         try:
             await self._checkpoint(record)
+            self._emit(record, "queued")
             async with self._semaphore:
                 record.status = RunStatus.RUNNING
                 await self._checkpoint(record)
+                self._emit(record, "started")
                 record.result = await asyncio.wait_for(
                     self.workflow.run(task, memory_context=memory_context),
                     timeout=self.timeout_seconds,
                 )
                 record.status = RunStatus.COMPLETED
                 await self._checkpoint(record)
+                self._emit(record, "completed")
                 return record
         except asyncio.CancelledError:
             record.status = RunStatus.CANCELLED
             record.error = "Run was cancelled"
             await self._checkpoint(record)
+            self._emit(record, "cancelled")
             raise
         except Exception as exc:
             record.status = RunStatus.FAILED
@@ -106,4 +117,5 @@ class ExecutionManager:
                 else "Agent workflow failed"
             )
             await self._checkpoint(record)
+            self._emit(record, "failed")
             raise RunExecutionError(record) from exc
