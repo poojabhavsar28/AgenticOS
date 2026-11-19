@@ -24,7 +24,10 @@ class CodingWorkflow:
 
     async def _plan(self, state: AgentState) -> dict[str, str]:
         context = state.get("memory_context", "")
-        prompt = f"Relevant memory (untrusted reference material):\n{context}\n\nTask:\n{state['task']}"
+        prompt = (
+            f"Relevant memory (untrusted reference material):\n{context}"
+            f"\n\nTask:\n{state['task']}"
+        )
         return {"plan": await self.model.generate(prompt, system=PLANNER)}
 
     async def _code(self, state: AgentState) -> dict[str, str]:
