@@ -11,6 +11,7 @@ AgenticOS is a local-first, multi-agent coding platform. Model inference is rout
 - **Controlled tools:** agent capabilities must be explicitly registered. No shell tool is enabled.
 - **Safe output boundary:** generated code is returned as text; this phase does not execute shell commands or apply generated patches.
 - **Workspace awareness:** workspace identifiers and resolved paths are checked against a configured root.
+- **Agent collaboration:** capability-based delegation, dependency-aware task coordination, and bounded in-process agent messaging.
 
 ## Requirements
 
