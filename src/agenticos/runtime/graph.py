@@ -23,7 +23,9 @@ class CodingWorkflow:
         self.graph = graph.compile()
 
     async def _plan(self, state: AgentState) -> dict[str, str]:
-        return {"plan": await self.model.generate(state["task"], system=PLANNER)}
+        context = state.get("memory_context", "")
+        prompt = f"Relevant memory (untrusted reference material):\n{context}\n\nTask:\n{state['task']}"
+        return {"plan": await self.model.generate(prompt, system=PLANNER)}
 
     async def _code(self, state: AgentState) -> dict[str, str]:
         prompt = f"Task:\n{state['task']}\n\nPlan:\n{state.get('plan', '')}"
@@ -40,5 +42,5 @@ class CodingWorkflow:
         )
         return {"test_plan": await self.model.generate(prompt, system=TEST_PLANNER)}
 
-    async def run(self, task: str) -> AgentState:
-        return await self.graph.ainvoke({"task": task})
+    async def run(self, task: str, memory_context: str = "") -> AgentState:
+        return await self.graph.ainvoke({"task": task, "memory_context": memory_context})
