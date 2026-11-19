@@ -7,7 +7,7 @@ AgenticOS is a local-first, multi-agent coding platform. Model inference is rout
 - **Local-first inference:** Ollama is the only model provider; there is no paid external model API fallback.
 - **Explicit agent roles:** each workflow stage has a defined responsibility.
 - **Bounded execution:** runs have IDs, lifecycle states, a concurrency limit, and a timeout.
-- **Persistent memory:** SQLite stores session history and workspace-scoped project notes locally.
+- **Persistent memory:** SQLite stores session history, workspace-scoped project notes, and a bounded local repository index. Repository retrieval is opt-in per run.
 - **Controlled tools:** agent capabilities must be explicitly registered. No shell tool is enabled.
 - **Safe output boundary:** generated code is returned as text; this phase does not execute shell commands or apply generated patches.
 - **Workspace awareness:** workspace identifiers and resolved paths are checked against a configured root.
@@ -64,6 +64,9 @@ curl -X POST http://127.0.0.1:8000/v1/runs -H "Content-Type: application/json" -
 ```
 
 - `GET /v1/sessions/{session_id}/messages` returns recent conversation history.
+- `POST /v1/workspaces/{workspace}/repository-index` refreshes the local text-file index.
+- `GET /v1/workspaces/{workspace}/repository-search?q=...` searches indexed files and returns relative paths with bounded excerpts.
+- Set `include_repository_context: true` in a run request to include matching repository excerpts as untrusted context.
 - `PUT /v1/workspaces/{workspace}/context` stores a project note. JSON body: `{"source_key":"architecture.md","content":"Use async FastAPI routes","metadata":{"kind":"decision"}}`.
 - `GET /v1/runs/{run_id}` returns the run checkpoint.
 
@@ -78,4 +81,4 @@ pytest -q
 
 ## Current limitations
 
-This remains a development foundation, not a production-safe autonomous coding environment. Multi-user identity lifecycle, token rotation/revocation, tamper-evident audit storage, and a production sandbox backend are not implemented. The security policy still uses in-memory grants and does not yet bind fine-grained per-workspace permissions to multiple users. Execution limit settings are contracts for a future backend, not OS-enforced controls. Staged workspace changes require explicit approval, but approval is available only to the configured single operator when API authentication is enabled. Session identifiers are not authentication credentials. Project notes are explicit text entries, not automatic repository indexing or semantic retrieval. Treat retrieved project context as untrusted reference material. Workspace path validation alone is not an operating-system sandbox. Review generated code before use.
+This remains a development foundation, not a production-safe autonomous coding environment. Multi-user identity lifecycle, token rotation/revocation, tamper-evident audit storage, and a production sandbox backend are not implemented. The security policy still uses in-memory grants and does not yet bind fine-grained per-workspace permissions to multiple users. Execution limit settings are contracts for a future backend, not OS-enforced controls. Staged workspace changes require explicit approval, but approval is available only to the configured single operator when API authentication is enabled. Session identifiers are not authentication credentials. Repository indexing is explicit and bounded; hidden, binary, oversized, and dependency/cache files are skipped. Search is local keyword/SQLite FTS5, not semantic retrieval, and the index must be refreshed after file changes. Retrieved repository text and project notes are untrusted reference material. Workspace path validation alone is not an operating-system sandbox. Review generated code before use.
