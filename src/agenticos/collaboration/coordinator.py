@@ -3,7 +3,12 @@
 from agenticos.collaboration.board import TaskBoard
 from agenticos.collaboration.bus import AgentMessageBus
 from agenticos.collaboration.directory import AgentDirectory
-from agenticos.collaboration.models import AgentMessage, AgentProfile, CollaborationTask
+from agenticos.collaboration.models import (
+    AgentMessage,
+    AgentProfile,
+    CollaborationTask,
+    TaskStatus,
+)
 
 
 class AgentCoordinator:
@@ -26,7 +31,7 @@ class AgentCoordinator:
 
     def refresh_task_readiness(self, task_id: str) -> None:
         task = self.tasks.get(task_id)
-        if task.status.value == "backlog" and self.tasks.dependencies_complete(task_id):
+        if task.status is TaskStatus.BACKLOG and self.tasks.dependencies_complete(task_id):
             self.tasks.mark_ready(task_id)
 
     def start_task(self, task_id: str, agent_id: str) -> None:
