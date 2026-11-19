@@ -1,9 +1,11 @@
 """FastAPI application factory and HTTP routes."""
 
+import asyncio
+import json
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from agenticos.config import Settings, get_settings
 from agenticos.contracts import (
@@ -20,6 +22,7 @@ from agenticos.memory.repository import RepositoryIndex
 from agenticos.memory.store import SQLiteMemoryStore
 from agenticos.runtime.checkpoints import SQLiteCheckpointStore
 from agenticos.runtime.execution import ExecutionManager, RunExecutionError
+from agenticos.runtime.events import SQLiteRunEventStore
 from agenticos.runtime.graph import CodingWorkflow
 from agenticos.security.audit import SQLiteAuditLog
 from agenticos.security.auth import BearerTokenAuthenticator
@@ -40,11 +43,13 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         config.ollama_base_url, config.ollama_model, config.ollama_timeout_seconds
     )
     workflow = CodingWorkflow(model)
+    run_events = SQLiteRunEventStore(config.operations_database_path)
     execution = ExecutionManager(
         workflow,
         SQLiteCheckpointStore(config.operations_database_path),
         max_concurrent_runs=config.max_concurrent_runs,
         timeout_seconds=config.run_timeout_seconds,
+        event_store=run_events,
     )
     memory = SQLiteMemoryStore(config.memory_database_path)
     repository_index = RepositoryIndex(config.workspace_root, config.memory_database_path)
@@ -56,6 +61,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     app.state.model = model
     app.state.workflow = workflow
     app.state.execution = execution
+    app.state.run_events = run_events
     app.state.memory = memory
     app.state.repository_index = repository_index
     app.state.workspace_files = workspace_files
@@ -299,6 +305,69 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Staged change not found")
         service.reject(change_id)
         return {"status": "rejected"}
+
+    @app.get("/v1/runs/{run_id}/events")
+    async def get_run_events(
+        run_id: str, request: Request, after_event_id: int = 0, limit: int = 100
+    ) -> list[dict[str, object]]:
+        snapshot = await request.app.state.execution.get_snapshot(run_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        try:
+            events = request.app.state.run_events.list_events(
+                run_id, after_event_id=after_event_id, limit=limit
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return [
+            {
+                "event_id": event.event_id,
+                "run_id": event.run_id,
+                "event_type": event.event_type,
+                "created_at": event.created_at,
+                "data": event.data,
+            }
+            for event in events
+        ]
+
+    @app.get("/v1/runs/{run_id}/events/stream")
+    async def stream_run_events(run_id: str, request: Request) -> StreamingResponse:
+        snapshot = await request.app.state.execution.get_snapshot(run_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        try:
+            after_id = max(0, int(request.headers.get("last-event-id", "0")))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Last-Event-ID must be an integer") from exc
+
+        async def event_stream():
+            cursor = after_id
+            for _ in range(60):
+                events = request.app.state.run_events.list_events(
+                    run_id, after_event_id=cursor, limit=100
+                )
+                for event in events:
+                    payload = json.dumps(
+                        {
+                            "run_id": event.run_id,
+                            "event_type": event.event_type,
+                            "created_at": event.created_at,
+                            "data": event.data,
+                        },
+                        separators=(",", ":"),
+                    )
+                    yield f"id: {event.event_id}\nevent: {event.event_type}\ndata: {payload}\n\n"
+                    cursor = event.event_id
+                current = await request.app.state.execution.get_snapshot(run_id)
+                if current and current.get("status") in {"completed", "failed", "cancelled"}:
+                    break
+                await asyncio.sleep(0.5)
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @app.get("/v1/runs/{run_id}")
     async def get_run(run_id: str, request: Request) -> dict[str, object]:
