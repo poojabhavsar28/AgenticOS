@@ -125,7 +125,7 @@ class RepositoryIndex:
         with self._connect() as connection:
             rows = []
             if self._fts_enabled:
-                expression = " AND ".join('"{}"'.format(token.replace('"', '""')) for token in tokens)
+                expression = " AND ".join(f'"{token}"' for token in tokens)
                 try:
                     rows = connection.execute(
                         """SELECT path, content, bm25(repository_fts) AS rank
@@ -147,6 +147,8 @@ class RepositoryIndex:
         for row in rows:
             content = row["content"]
             lowered = content.lower()
+            positions = [lowered.find(token.lower()) for token in tokens]
+            first = min((position for position in positions if position >= 0), default=0)
             positions = [lowered.find(token.lower()) for token in tokens]
             first = min((position for position in positions if position >= 0), default=0)
             start = max(0, first - self.excerpt_characters // 4)
