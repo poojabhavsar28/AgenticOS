@@ -69,6 +69,10 @@ class ExecutionManager:
         record.updated_at = datetime.now(UTC).isoformat()
         await self.checkpoints.save(record.run_id, record.snapshot())
 
+    async def get_snapshot(self, run_id: str) -> dict[str, object] | None:
+        """Retrieve a stored run snapshot."""
+        return await self.checkpoints.load(run_id)
+
     async def execute(self, task: str) -> RunRecord:
         now = datetime.now(UTC).isoformat()
         record = RunRecord(
