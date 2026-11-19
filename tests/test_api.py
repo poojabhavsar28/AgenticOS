@@ -123,3 +123,41 @@ def test_repository_index_endpoints_reject_workspace_escape(fake_model, tmp_path
     assert client.get(
         "/v1/workspaces/../outside/repository-search", params={"q": "needle"}
     ).status_code in {404, 422}
+
+
+
+def test_run_event_history_and_sse_stream(fake_model, tmp_path) -> None:
+    client = make_client(fake_model, tmp_path)
+    created = client.post(
+        "/v1/runs", json={"task": "Create a safe parser", "session_id": "events-session"}
+    )
+    run_id = created.json()["run_id"]
+
+    response = client.get(f"/v1/runs/{run_id}/events")
+    assert response.status_code == 200
+    assert [event["event_type"] for event in response.json()] == [
+        "queued",
+        "started",
+        "completed",
+    ]
+
+    resumed = client.get(
+        f"/v1/runs/{run_id}/events",
+        headers={"Last-Event-ID": str(response.json()[0]["event_id"])},
+    )
+    assert [event["event_type"] for event in resumed.json()] == ["started", "completed"]
+
+    stream = client.get(f"/v1/runs/{run_id}/events/stream")
+    assert stream.status_code == 200
+    assert stream.headers["content-type"].startswith("text/event-stream")
+    assert "event: queued" in stream.text
+    assert "event: completed" in stream.text
+    assert "id: " in stream.text
+
+
+def test_run_event_endpoints_validate_unknown_runs_and_resume_ids(fake_model, tmp_path) -> None:
+    client = make_client(fake_model, tmp_path)
+    assert client.get("/v1/runs/missing/events").status_code == 404
+    assert client.get(
+        "/v1/runs/missing/events/stream", headers={"Last-Event-ID": "invalid"}
+    ).status_code == 404
