@@ -19,7 +19,7 @@ class FailingWorkflow:
 
 
 class SlowWorkflow:
-    async def run(self, task: str) -> dict[str, str]:
+    async def run(self, task: str, memory_context: str = "") -> dict[str, str]:
         await asyncio.sleep(0.05)
         return {"task": task}
 
@@ -71,7 +71,7 @@ async def test_execution_respects_concurrency_limit() -> None:
             self.active = 0
             self.peak = 0
 
-        async def run(self, task: str) -> dict[str, str]:
+        async def run(self, task: str, memory_context: str = "") -> dict[str, str]:
             self.active += 1
             self.peak = max(self.peak, self.active)
             await asyncio.sleep(0.01)
