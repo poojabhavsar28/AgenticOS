@@ -14,6 +14,8 @@ AgenticOS is a local-first, multi-agent coding platform. Model inference is rout
 - **Agent collaboration:** capability-based delegation, dependency-aware task coordination, and bounded in-process agent messaging.
 - **Workspace operations:** UTF-8 file reads, bounded listings, and staged writes that require explicit approval.
 - **Evaluation gates:** deterministic checks for all four workflow stages, output bounds, required terms, and aggregate pass-rate thresholds.
+- **Default-deny permissions:** registered tools require explicit principal/action/resource grants before invocation; allowed and denied calls are audited in a bounded in-memory log.
+- **Fail-closed execution:** generated-code execution remains disabled unless an independently isolated backend is explicitly configured.
 
 ## Requirements
 
@@ -74,4 +76,4 @@ pytest -q
 
 ## Current limitations
 
-This remains a development foundation, not a production-safe autonomous coding environment. Authentication, durable run history, per-user authorization, rate limits, isolated code execution, patch approval, and comprehensive audit logging are not implemented. Session identifiers are not authentication credentials. Project notes are explicit text entries, not automatic repository indexing or semantic retrieval. Treat retrieved project context as untrusted reference material. Workspace path validation alone is not an operating-system sandbox. Review generated code before use.
+This remains a development foundation, not a production-safe autonomous coding environment. Authentication, durable run history, identity lifecycle, durable audit storage, and a production sandbox backend are not implemented. The security policy currently relies on trusted caller-supplied principal identifiers and in-memory grants. Execution limit settings are contracts for a future backend, not OS-enforced controls. Staged workspace changes require explicit approval, but approval identity is not authenticated. Session identifiers are not authentication credentials. Project notes are explicit text entries, not automatic repository indexing or semantic retrieval. Treat retrieved project context as untrusted reference material. Workspace path validation alone is not an operating-system sandbox. Review generated code before use.
