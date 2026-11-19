@@ -1,8 +1,8 @@
 """Local bearer-token authentication for single-operator deployments."""
 
-from dataclasses import dataclass
 import hashlib
 import hmac
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
