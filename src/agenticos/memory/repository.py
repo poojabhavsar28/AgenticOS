@@ -24,14 +24,16 @@ class RepositoryIndex:
         *,
         max_file_bytes: int = 256_000,
         max_files: int = 2_000,
+        max_total_bytes: int = 20_000_000,
         excerpt_characters: int = 500,
     ) -> None:
-        if min(max_file_bytes, max_files, excerpt_characters) < 1:
+        if min(max_file_bytes, max_files, max_total_bytes, excerpt_characters) < 1:
             raise ValueError("Repository index limits must be positive")
         self.workspace_root = workspace_root.expanduser().resolve()
         self.database_path = database_path
         self.max_file_bytes = max_file_bytes
         self.max_files = max_files
+        self.max_total_bytes = max_total_bytes
         self.excerpt_characters = excerpt_characters
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self._fts_enabled = self._initialize()
@@ -65,6 +67,7 @@ class RepositoryIndex:
 
     def _iter_text_files(self, base: Path):
         count = 0
+        total_bytes = 0
         for directory, dirnames, filenames in os.walk(base, followlinks=False):
             current = Path(directory)
             dirnames[:] = sorted(
@@ -82,6 +85,9 @@ class RepositoryIndex:
                     if not path.is_file() or path.stat().st_size > self.max_file_bytes:
                         continue
                     raw = path.read_bytes()
+                    total_bytes += len(raw)
+                    if total_bytes > self.max_total_bytes:
+                        raise ValueError("Workspace exceeds the configured repository byte limit")
                     if b"\x00" in raw:
                         continue
                     content = raw.decode("utf-8")
