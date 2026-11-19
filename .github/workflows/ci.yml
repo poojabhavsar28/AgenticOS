@@ -18,3 +18,5 @@ jobs:
         run: ruff check .
       - name: Test
         run: pytest -q
+      - name: Evaluation regression gate
+        run: pytest -q tests/test_evaluation.py
