@@ -17,9 +17,10 @@ from agenticos.inference.ollama import OllamaClient
 from agenticos.logging import configure_logging, get_logger
 from agenticos.memory.context import build_memory_context
 from agenticos.memory.store import SQLiteMemoryStore
-from agenticos.runtime.checkpoints import InMemoryCheckpointStore
+from agenticos.runtime.checkpoints import SQLiteCheckpointStore
 from agenticos.runtime.execution import ExecutionManager, RunExecutionError
 from agenticos.runtime.graph import CodingWorkflow
+from agenticos.security.audit import SQLiteAuditLog
 from agenticos.security.auth import BearerTokenAuthenticator
 from agenticos.security.workspace import WorkspaceBoundaryError, resolve_workspace_path
 from agenticos.workspace import WorkspaceFileService
@@ -40,12 +41,13 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     workflow = CodingWorkflow(model)
     execution = ExecutionManager(
         workflow,
-        InMemoryCheckpointStore(),
+        SQLiteCheckpointStore(config.operations_database_path),
         max_concurrent_runs=config.max_concurrent_runs,
         timeout_seconds=config.run_timeout_seconds,
     )
     memory = SQLiteMemoryStore(config.memory_database_path)
     workspace_files = WorkspaceFileService(config.workspace_root)
+    audit_log = SQLiteAuditLog(config.operations_database_path)
 
     app = FastAPI(title=config.app_name, version="0.4.0")
     app.state.settings = config
@@ -55,19 +57,29 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     app.state.memory = memory
     app.state.workspace_files = workspace_files
     app.state.authenticator = authenticator
+    app.state.audit_log = audit_log
 
     @app.middleware("http")
     async def authenticate_api_requests(request: Request, call_next):
+        principal_id = "anonymous"
         if request.url.path.startswith("/v1/") and authenticator is not None:
             principal = authenticator.authenticate(request.headers.get("authorization"))
             if principal is None:
+                audit_log.record(
+                    principal_id, request.method, request.url.path, "denied"
+                )
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "A valid bearer token is required"},
                     headers={"WWW-Authenticate": "Bearer"},
                 )
             request.state.principal = principal
+            principal_id = principal.principal_id
         response = await call_next(request)
+        if request.url.path.startswith("/v1/"):
+            audit_log.record(
+                principal_id, request.method, request.url.path, str(response.status_code)
+            )
         return response
 
     @app.get("/health")
