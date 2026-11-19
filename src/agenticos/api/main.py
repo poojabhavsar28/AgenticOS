@@ -17,6 +17,7 @@ from agenticos.inference.ollama import OllamaClient
 from agenticos.logging import configure_logging, get_logger
 from agenticos.memory.context import build_memory_context
 from agenticos.memory.store import SQLiteMemoryStore
+from agenticos.memory.repository import RepositoryIndex
 from agenticos.runtime.checkpoints import SQLiteCheckpointStore
 from agenticos.runtime.execution import ExecutionManager, RunExecutionError
 from agenticos.runtime.graph import CodingWorkflow
@@ -46,6 +47,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         timeout_seconds=config.run_timeout_seconds,
     )
     memory = SQLiteMemoryStore(config.memory_database_path)
+    repository_index = RepositoryIndex(config.workspace_root, config.memory_database_path)
     workspace_files = WorkspaceFileService(config.workspace_root)
     audit_log = SQLiteAuditLog(config.operations_database_path)
 
@@ -55,6 +57,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     app.state.workflow = workflow
     app.state.execution = execution
     app.state.memory = memory
+    app.state.repository_index = repository_index
     app.state.workspace_files = workspace_files
     app.state.authenticator = authenticator
     app.state.audit_log = audit_log
@@ -107,7 +110,12 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             store = request.app.state.memory
             history = store.get_recent_messages(payload.session_id)
             project_items = store.get_project_context(payload.workspace)
-            memory_context = build_memory_context(history, project_items)
+            repository_items = (
+                request.app.state.repository_index.search(payload.workspace, payload.task)
+                if payload.include_repository_context
+                else []
+            )
+            memory_context = build_memory_context(history, project_items, repository_items)
             store.append_message(payload.session_id, "user", payload.task)
             record = await request.app.state.execution.execute(
                 payload.task, memory_context=memory_context
@@ -165,6 +173,22 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         except (WorkspaceBoundaryError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"status": "saved", "workspace": workspace}
+
+    @app.post("/v1/workspaces/{workspace}/repository-index")
+    async def refresh_repository_index(workspace: str, request: Request) -> dict[str, int | bool]:
+        try:
+            return request.app.state.repository_index.refresh(workspace)
+        except (WorkspaceBoundaryError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/v1/workspaces/{workspace}/repository-search")
+    async def search_repository_index(
+        workspace: str, request: Request, q: str, limit: int = 10
+    ) -> list[dict[str, str]]:
+        try:
+            return request.app.state.repository_index.search(workspace, q, limit)
+        except (WorkspaceBoundaryError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get("/v1/workspaces/{workspace}/files", response_model=list[str])
     async def list_workspace_files(workspace: str, request: Request) -> list[str]:
