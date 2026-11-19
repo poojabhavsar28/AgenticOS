@@ -1,6 +1,6 @@
 """Security policy and execution boundary APIs."""
 
-from agenticos.security.audit import AuditEvent, AuditLog
+from agenticos.security.audit import AuditEvent, AuditLog, SQLiteAuditLog
 from agenticos.security.execution import (
     ExecutionLimits,
     ExecutionResult,
@@ -12,6 +12,7 @@ from agenticos.security.policy import Permission, PermissionDenied, PermissionPo
 __all__ = [
     "AuditEvent",
     "AuditLog",
+    "SQLiteAuditLog",
     "ExecutionLimits",
     "ExecutionResult",
     "Permission",
