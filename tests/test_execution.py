@@ -64,6 +64,29 @@ async def test_execution_timeout_is_recorded() -> None:
     assert captured.value.record.status is RunStatus.FAILED
 
 
+@pytest.mark.asyncio
+async def test_execution_respects_concurrency_limit() -> None:
+    class TrackingWorkflow:
+        def __init__(self) -> None:
+            self.active = 0
+            self.peak = 0
+
+        async def run(self, task: str) -> dict[str, str]:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+            await asyncio.sleep(0.01)
+            self.active -= 1
+            return {"task": task}
+
+    workflow = TrackingWorkflow()
+    manager = ExecutionManager(
+        workflow, InMemoryCheckpointStore(), max_concurrent_runs=2
+    )
+    await asyncio.gather(*(manager.execute(f"task-{index}") for index in range(6)))
+
+    assert workflow.peak == 2
+
+
 def test_execution_rejects_invalid_limits() -> None:
     with pytest.raises(ValueError):
         ExecutionManager(SuccessfulWorkflow(), InMemoryCheckpointStore(), max_concurrent_runs=0)
