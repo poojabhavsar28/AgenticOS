@@ -19,13 +19,15 @@ class AgentCoordinator:
 
     def delegate(self, task: CollaborationTask) -> str:
         self.tasks.add(task)
-        try:
-            agent_id = self.directory.assign(task)
+        agent_id = self.directory.assign(task)
+        if self.tasks.dependencies_complete(task.task_id):
             self.tasks.mark_ready(task.task_id)
-            return agent_id
-        except Exception:
-            # Keep the task visible for diagnosis; do not silently discard it.
-            raise
+        return agent_id
+
+    def refresh_task_readiness(self, task_id: str) -> None:
+        task = self.tasks.get(task_id)
+        if task.status.value == "backlog" and self.tasks.dependencies_complete(task_id):
+            self.tasks.mark_ready(task_id)
 
     def start_task(self, task_id: str, agent_id: str) -> None:
         self.tasks.start(task_id, agent_id)
