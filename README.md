@@ -16,6 +16,8 @@ AgenticOS is a local-first, multi-agent coding platform. Model inference is rout
 - **Evaluation gates:** deterministic checks for all four workflow stages, output bounds, required terms, and aggregate pass-rate thresholds.
 - **Default-deny permissions:** registered tools require explicit principal/action/resource grants before invocation; allowed and denied calls are audited in a bounded in-memory log.
 - **Fail-closed execution:** generated-code execution remains disabled unless an independently isolated backend is explicitly configured.
+- **Durable operations:** SQLite stores run checkpoints and append-only API audit events across process restarts.
+- **API authentication:** a configured single-operator bearer token protects `/v1/*`; `/health` and `/ready` remain public.
 
 ## Requirements
 
@@ -65,7 +67,7 @@ curl -X POST http://127.0.0.1:8000/v1/runs -H "Content-Type: application/json" -
 - `PUT /v1/workspaces/{workspace}/context` stores a project note. JSON body: `{"source_key":"architecture.md","content":"Use async FastAPI routes","metadata":{"kind":"decision"}}`.
 - `GET /v1/runs/{run_id}` returns the run checkpoint.
 
-SQLite history persists across restarts. Run checkpoints remain process-local.
+SQLite history, run checkpoints, and API audit events persist across restarts in local database files. Configure `OPERATIONS_DATABASE_PATH` to change the checkpoint/audit database location.
 
 ## Tests
 
@@ -76,4 +78,4 @@ pytest -q
 
 ## Current limitations
 
-This remains a development foundation, not a production-safe autonomous coding environment. Authentication, durable run history, identity lifecycle, durable audit storage, and a production sandbox backend are not implemented. The security policy currently relies on trusted caller-supplied principal identifiers and in-memory grants. Execution limit settings are contracts for a future backend, not OS-enforced controls. Staged workspace changes require explicit approval, but approval identity is not authenticated. Session identifiers are not authentication credentials. Project notes are explicit text entries, not automatic repository indexing or semantic retrieval. Treat retrieved project context as untrusted reference material. Workspace path validation alone is not an operating-system sandbox. Review generated code before use.
+This remains a development foundation, not a production-safe autonomous coding environment. Multi-user identity lifecycle, token rotation/revocation, tamper-evident audit storage, and a production sandbox backend are not implemented. The security policy still uses in-memory grants and does not yet bind fine-grained per-workspace permissions to multiple users. Execution limit settings are contracts for a future backend, not OS-enforced controls. Staged workspace changes require explicit approval, but approval is available only to the configured single operator when API authentication is enabled. Session identifiers are not authentication credentials. Project notes are explicit text entries, not automatic repository indexing or semantic retrieval. Treat retrieved project context as untrusted reference material. Workspace path validation alone is not an operating-system sandbox. Review generated code before use.
