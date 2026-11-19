@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     max_concurrent_runs: int = Field(default=2, ge=1, le=32)
     workspace_root: Path = Path("./workspace")
     memory_database_path: Path = Path("./.agenticos/memory.sqlite3")
+    api_auth_token: str | None = None
 
 
 @lru_cache(maxsize=1)
