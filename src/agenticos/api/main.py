@@ -16,8 +16,8 @@ from agenticos.contracts import (
 from agenticos.inference.ollama import OllamaClient
 from agenticos.logging import configure_logging, get_logger
 from agenticos.memory.context import build_memory_context
-from agenticos.memory.store import SQLiteMemoryStore
 from agenticos.memory.repository import RepositoryIndex
+from agenticos.memory.store import SQLiteMemoryStore
 from agenticos.runtime.checkpoints import SQLiteCheckpointStore
 from agenticos.runtime.execution import ExecutionManager, RunExecutionError
 from agenticos.runtime.graph import CodingWorkflow
