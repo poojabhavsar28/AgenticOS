@@ -32,3 +32,11 @@ Replace trusted caller-supplied identities with an authenticated API principal b
 ## Deferred
 
 Multi-user accounts, token rotation/revocation API, role administration UI, OAuth/OIDC, durable audit storage, and OS-enforced execution isolation.
+
+## Initial implementation
+
+The API now supports an optional single-operator bearer token. When configured, all `/v1/*` routes require it; `/health` and `/ready` remain public. Tokens are compared using SHA-256 digests and constant-time comparison. The token is not stored in plaintext by the authenticator.
+
+In production mode, application startup fails if `API_AUTH_TOKEN` is absent. Development mode remains backward-compatible and unauthenticated unless a token is configured. The `/v1/me` endpoint reports the server-derived principal when authentication is enabled.
+
+This is a bootstrap single-operator mechanism, not multi-user authentication. Deploy behind TLS, use a high-entropy secret, and never commit the token.
