@@ -37,3 +37,9 @@ Make run checkpoints and security audit events survive process restarts using th
 ## Deferred
 
 Multi-process distributed locking, encrypted-at-rest storage, tamper-evident audit chains, automatic retention jobs, multi-user authorization, and production-grade backup orchestration.
+
+## Implementation notes
+
+The application uses one configurable SQLite file, `OPERATIONS_DATABASE_PATH`, for run checkpoints and API audit events. Run snapshots are JSON-serialized and upserted by run ID. Audit records are append-only and store the server-derived principal (or `anonymous`), HTTP method, route path, response status, and timestamp. Authorization headers, request bodies, and generated source are not written to the audit store.
+
+The default file is `.agenticos/operations.sqlite3`. Protect this file with operating-system permissions and include it in an appropriate local backup policy. SQLite is a single-host persistence mechanism; it is not a distributed coordination service or tamper-proof audit ledger. No public audit-reading endpoint is added in this phase.
