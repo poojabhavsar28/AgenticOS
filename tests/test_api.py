@@ -1,5 +1,7 @@
 """HTTP API tests using an in-memory fake model."""
 
+import asyncio
+
 from fastapi.testclient import TestClient
 
 from agenticos.api.main import create_app
@@ -42,8 +44,6 @@ def test_run_endpoint_returns_agent_outputs_and_status(fake_model, tmp_path) -> 
     status = client.get(f"/v1/runs/{body['run_id']}")
     assert status.status_code == 200
     assert status.json()["status"] == "completed"
-    import asyncio
-
     checkpoint = SQLiteCheckpointStore(tmp_path / "operations.sqlite3")
     snapshot = asyncio.run(checkpoint.load(body["run_id"]))
     assert snapshot is not None and snapshot["status"] == "completed"
