@@ -28,6 +28,7 @@ def make_authenticated_client(fake_model, tmp_path) -> TestClient:
     settings = Settings(
         workspace_root=tmp_path,
         memory_database_path=tmp_path / "memory.sqlite3",
+        operations_database_path=tmp_path / "operations.sqlite3",
         api_auth_token="test-only-secret",
     )
     return TestClient(create_app(settings, model_client=fake_model))
