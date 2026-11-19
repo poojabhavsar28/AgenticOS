@@ -215,7 +215,8 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             written_path = service.approve(change_id)
         except (WorkspaceBoundaryError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return {"status": "approved", "path": written_path.relative_to(config.workspace_root.resolve()).as_posix()}
+        relative_path = written_path.relative_to(config.workspace_root.resolve()).as_posix()
+        return {"status": "approved", "path": relative_path}
 
     @app.delete("/v1/workspaces/{workspace}/changes/{change_id}")
     async def reject_workspace_change(
