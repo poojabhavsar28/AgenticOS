@@ -3,6 +3,7 @@
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from agenticos.config import Settings, get_settings
 from agenticos.contracts import (
@@ -19,12 +20,18 @@ from agenticos.memory.store import SQLiteMemoryStore
 from agenticos.runtime.checkpoints import InMemoryCheckpointStore
 from agenticos.runtime.execution import ExecutionManager, RunExecutionError
 from agenticos.runtime.graph import CodingWorkflow
+from agenticos.security.auth import BearerTokenAuthenticator
 from agenticos.security.workspace import WorkspaceBoundaryError, resolve_workspace_path
 from agenticos.workspace import WorkspaceFileService
 
 
 def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     config = settings or get_settings()
+    if config.app_env.lower() == "production" and not config.api_auth_token:
+        raise ValueError("API_AUTH_TOKEN is required when APP_ENV=production")
+    authenticator = (
+        BearerTokenAuthenticator(config.api_auth_token) if config.api_auth_token else None
+    )
     configure_logging(config.log_level)
     logger = get_logger(__name__)
     model = model_client or OllamaClient(
@@ -40,13 +47,28 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     memory = SQLiteMemoryStore(config.memory_database_path)
     workspace_files = WorkspaceFileService(config.workspace_root)
 
-    app = FastAPI(title=config.app_name, version="0.3.0")
+    app = FastAPI(title=config.app_name, version="0.4.0")
     app.state.settings = config
     app.state.model = model
     app.state.workflow = workflow
     app.state.execution = execution
     app.state.memory = memory
     app.state.workspace_files = workspace_files
+    app.state.authenticator = authenticator
+
+    @app.middleware("http")
+    async def authenticate_api_requests(request: Request, call_next):
+        if request.url.path.startswith("/v1/") and authenticator is not None:
+            principal = authenticator.authenticate(request.headers.get("authorization"))
+            if principal is None:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "A valid bearer token is required"},
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            request.state.principal = principal
+        response = await call_next(request)
+        return response
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -58,6 +80,13 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         if not healthy:
             raise HTTPException(status_code=503, detail="Local Ollama service is unavailable")
         return {"status": "ready", "provider": "ollama"}
+
+    @app.get("/v1/me")
+    async def current_principal(request: Request) -> dict[str, str]:
+        principal = getattr(request.state, "principal", None)
+        if principal is None:
+            return {"principal_id": "local-development"}
+        return {"principal_id": principal.principal_id}
 
     @app.post("/v1/runs", response_model=RunResponse)
     async def create_run(payload: RunRequest, request: Request) -> RunResponse:
@@ -124,7 +153,6 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         except (WorkspaceBoundaryError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"status": "saved", "workspace": workspace}
-
 
     @app.get("/v1/workspaces/{workspace}/files", response_model=list[str])
     async def list_workspace_files(workspace: str, request: Request) -> list[str]:
