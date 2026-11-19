@@ -14,7 +14,7 @@ class SuccessfulWorkflow:
 
 
 class FailingWorkflow:
-    async def run(self, task: str) -> dict[str, str]:
+    async def run(self, task: str, memory_context: str = "") -> dict[str, str]:
         raise RuntimeError("private implementation detail")
 
 
