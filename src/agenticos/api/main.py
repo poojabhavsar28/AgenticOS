@@ -5,7 +5,13 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Request
 
 from agenticos.config import Settings, get_settings
-from agenticos.contracts import RunRequest, RunResponse
+from agenticos.contracts import (
+    RunRequest,
+    RunResponse,
+    WorkspaceChangeResponse,
+    WorkspaceReadResponse,
+    WorkspaceStageRequest,
+)
 from agenticos.inference.ollama import OllamaClient
 from agenticos.logging import configure_logging, get_logger
 from agenticos.memory.context import build_memory_context
@@ -14,6 +20,7 @@ from agenticos.runtime.checkpoints import InMemoryCheckpointStore
 from agenticos.runtime.execution import ExecutionManager, RunExecutionError
 from agenticos.runtime.graph import CodingWorkflow
 from agenticos.security.workspace import WorkspaceBoundaryError, resolve_workspace_path
+from agenticos.workspace import WorkspaceFileService
 
 
 def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
@@ -31,6 +38,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         timeout_seconds=config.run_timeout_seconds,
     )
     memory = SQLiteMemoryStore(config.memory_database_path)
+    workspace_files = WorkspaceFileService(config.workspace_root)
 
     app = FastAPI(title=config.app_name, version="0.3.0")
     app.state.settings = config
@@ -38,6 +46,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     app.state.workflow = workflow
     app.state.execution = execution
     app.state.memory = memory
+    app.state.workspace_files = workspace_files
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -115,6 +124,116 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         except (WorkspaceBoundaryError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"status": "saved", "workspace": workspace}
+
+
+    @app.get("/v1/workspaces/{workspace}/files", response_model=list[str])
+    async def list_workspace_files(workspace: str, request: Request) -> list[str]:
+        try:
+            return list(request.app.state.workspace_files.list_files(workspace))
+        except (WorkspaceBoundaryError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get(
+        "/v1/workspaces/{workspace}/files/{relative_path:path}",
+        response_model=WorkspaceReadResponse,
+    )
+    async def read_workspace_file(
+        workspace: str, relative_path: str, request: Request
+    ) -> WorkspaceReadResponse:
+        try:
+            content = request.app.state.workspace_files.read_text(workspace, relative_path)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (WorkspaceBoundaryError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return WorkspaceReadResponse(
+            workspace=workspace, relative_path=relative_path, content=content
+        )
+
+    @app.post(
+        "/v1/workspaces/{workspace}/changes",
+        response_model=WorkspaceChangeResponse,
+        status_code=202,
+    )
+    async def stage_workspace_change(
+        workspace: str, payload: WorkspaceStageRequest, request: Request
+    ) -> WorkspaceChangeResponse:
+        try:
+            change = request.app.state.workspace_files.stage_write(
+                workspace, payload.relative_path, payload.content
+            )
+        except (WorkspaceBoundaryError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return WorkspaceChangeResponse(
+            change_id=change.change_id,
+            workspace=change.workspace,
+            relative_path=change.relative_path,
+            size_bytes=change.size_bytes,
+        )
+
+    @app.get(
+        "/v1/workspaces/{workspace}/changes",
+        response_model=list[WorkspaceChangeResponse],
+    )
+    async def list_workspace_changes(
+        workspace: str, request: Request
+    ) -> list[WorkspaceChangeResponse]:
+        try:
+            changes = [
+                change
+                for change in request.app.state.workspace_files.pending_changes()
+                if change.workspace == workspace
+            ]
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return [
+            WorkspaceChangeResponse(
+                change_id=change.change_id,
+                workspace=change.workspace,
+                relative_path=change.relative_path,
+                size_bytes=change.size_bytes,
+            )
+            for change in changes
+        ]
+
+    @app.post("/v1/workspaces/{workspace}/changes/{change_id}/approve")
+    async def approve_workspace_change(
+        workspace: str, change_id: str, request: Request
+    ) -> dict[str, str]:
+        service = request.app.state.workspace_files
+        change = next(
+            (
+                item
+                for item in service.pending_changes()
+                if item.change_id == change_id and item.workspace == workspace
+            ),
+            None,
+        )
+        if change is None:
+            raise HTTPException(status_code=404, detail="Staged change not found")
+        try:
+            written_path = service.approve(change_id)
+        except (WorkspaceBoundaryError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"status": "approved", "path": written_path.relative_to(config.workspace_root.resolve()).as_posix()}
+
+    @app.delete("/v1/workspaces/{workspace}/changes/{change_id}")
+    async def reject_workspace_change(
+        workspace: str, change_id: str, request: Request
+    ) -> dict[str, str]:
+        service = request.app.state.workspace_files
+        change = next(
+            (
+                item
+                for item in service.pending_changes()
+                if item.change_id == change_id and item.workspace == workspace
+            ),
+            None,
+        )
+        if change is None:
+            raise HTTPException(status_code=404, detail="Staged change not found")
+        service.reject(change_id)
+        return {"status": "rejected"}
 
     @app.get("/v1/runs/{run_id}")
     async def get_run(run_id: str, request: Request) -> dict[str, object]:
