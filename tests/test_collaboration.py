@@ -50,14 +50,13 @@ def test_task_waits_for_dependencies() -> None:
         dependencies=(prerequisite.task_id,),
     )
     coordinator.delegate(prerequisite)
-    coordinator.tasks.add(dependent)
+    coordinator.delegate(dependent)
+    assert dependent.status is TaskStatus.BACKLOG
 
-    with pytest.raises(ValueError, match="dependencies"):
-        coordinator.tasks.mark_ready(dependent.task_id)
 
     coordinator.start_task(prerequisite.task_id, "builder")
     coordinator.complete_task(prerequisite.task_id, "builder", "Schema ready")
-    coordinator.tasks.mark_ready(dependent.task_id)
+    coordinator.refresh_task_readiness(dependent.task_id)
     assert dependent.status is TaskStatus.READY
 
 
