@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from agenticos.runtime.checkpoints import CheckpointStore
 from agenticos.runtime.events import SQLiteRunEventStore
+from agenticos.runtime.progress import StageProgress
 
 
 class Workflow(Protocol):
@@ -72,6 +73,28 @@ class ExecutionManager:
         if self.event_store is not None:
             self.event_store.append(record.run_id, event_type, {"status": record.status.value})
 
+    def _emit_stage_progress(self, progress: StageProgress) -> None:
+        if self.event_store is None:
+            return
+        data: dict[str, str | int] = {
+            "stage": progress.stage.value,
+            "occurred_at": progress.occurred_at,
+        }
+        if progress.duration_ms is not None:
+            data["duration_ms"] = progress.duration_ms
+        self.event_store.append(progress.run_id, progress.event_type.value, data)
+
+    async def _run_workflow(self, record: RunRecord, memory_context: str) -> dict[str, Any]:
+        run_with_progress = getattr(self.workflow, "run_with_progress", None)
+        if run_with_progress is not None:
+            return await run_with_progress(
+                record.task,
+                run_id=record.run_id,
+                memory_context=memory_context,
+                progress_callback=self._emit_stage_progress,
+            )
+        return await self.workflow.run(record.task, memory_context=memory_context)
+
     async def _checkpoint(self, record: RunRecord) -> None:
         record.updated_at = datetime.now(UTC).isoformat()
         await self.checkpoints.save(record.run_id, record.snapshot())
@@ -96,7 +119,7 @@ class ExecutionManager:
                 await self._checkpoint(record)
                 self._emit(record, "started")
                 record.result = await asyncio.wait_for(
-                    self.workflow.run(task, memory_context=memory_context),
+                    self._run_workflow(record, memory_context),
                     timeout=self.timeout_seconds,
                 )
                 record.status = RunStatus.COMPLETED
