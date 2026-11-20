@@ -36,6 +36,7 @@ async def test_docker_backend_applies_hardening_and_cleans_container() -> None:
     result = await backend.execute(SandboxExecutionRequest(source="print('safe')"))
 
     assert result.exit_code == 0
+    assert result.stdout == "captured output"
     assert ("--network", "none") == tuple(
         backend.commands[1][backend.commands[1].index("--network"):
                             backend.commands[1].index("--network") + 2]
@@ -51,6 +52,8 @@ async def test_docker_backend_applies_hardening_and_cleans_container() -> None:
         "--cpus",
         "--tmpfs",
         "--mount",
+        "--log-driver",
+        "--log-opt",
     ):
         assert flag in create
     assert backend.commands[-1] == ("rm", "--force", "container-id")
