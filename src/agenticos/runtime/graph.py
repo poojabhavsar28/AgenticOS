@@ -139,4 +139,10 @@ class CodingWorkflow:
             "progress_callback": progress_callback,
             "cancellation_check": check_cancellation,
         }
-        return await self.graph.ainvoke(state)
+        result = await self.graph.ainvoke(state)
+        internal_keys = {"run_id", "progress_callback", "cancellation_check"}
+        return {
+            key: value
+            for key, value in result.items()
+            if key not in internal_keys
+        }
