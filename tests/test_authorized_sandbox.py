@@ -1,5 +1,6 @@
 import pytest
 
+from agenticos.security.approval import HumanApprovalManager, SQLiteExecutionApprovalStore
 from agenticos.security.audit import AuditLog
 from agenticos.security.authorized_sandbox import (
     SANDBOX_EXECUTE_ACTION,
@@ -31,18 +32,34 @@ class StubBackend(DockerSandboxBackend):
         )
 
 
+def make_approval(tmp_path, request):
+    approvals = HumanApprovalManager(
+        SQLiteExecutionApprovalStore(tmp_path / "approvals.sqlite3"),
+        allowed_approvers={"human-admin"},
+    )
+    approval_id = approvals.request("agent-1", request)
+    approvals.approve(approval_id, "human-admin")
+    return approvals, approval_id
+
+
+def make_executor(backend, audit, approvals, *, allowed=True):
+    grants = (
+        {Permission("agent-1", SANDBOX_EXECUTE_ACTION, SANDBOX_PYTHON_RESOURCE)}
+        if allowed
+        else set()
+    )
+    return AuthorizedSandboxExecutor(backend, PermissionPolicy(grants), audit, approvals)
+
+
 @pytest.mark.asyncio
-async def test_authorized_execution_records_completion_without_source() -> None:
+async def test_authorized_execution_records_completion_without_source(tmp_path) -> None:
     backend = StubBackend()
     audit = AuditLog()
-    permissions = PermissionPolicy({
-        Permission("agent-1", SANDBOX_EXECUTE_ACTION, SANDBOX_PYTHON_RESOURCE)
-    })
-    executor = AuthorizedSandboxExecutor(backend, permissions, audit)
+    request = SandboxExecutionRequest(source="print('secret source')")
+    approvals, approval_id = make_approval(tmp_path, request)
+    executor = make_executor(backend, audit, approvals)
 
-    result = await executor.execute(
-        "agent-1", SandboxExecutionRequest(source="print('secret source')")
-    )
+    result = await executor.execute("agent-1", request, approval_id=approval_id)
 
     assert result.stdout == "safe output"
     assert backend.calls == 1
@@ -52,43 +69,61 @@ async def test_authorized_execution_records_completion_without_source() -> None:
 
 
 @pytest.mark.asyncio
-async def test_unauthorized_execution_is_denied_and_audited() -> None:
+async def test_unauthorized_execution_is_denied_and_audited(tmp_path) -> None:
     backend = StubBackend()
     audit = AuditLog()
-    executor = AuthorizedSandboxExecutor(backend, PermissionPolicy(), audit)
+    request = SandboxExecutionRequest(source="pass")
+    approvals, approval_id = make_approval(tmp_path, request)
+    executor = make_executor(backend, audit, approvals, allowed=False)
 
     with pytest.raises(PermissionDenied):
-        await executor.execute("untrusted-agent", SandboxExecutionRequest(source="pass"))
+        await executor.execute("agent-1", request, approval_id=approval_id)
 
     assert backend.calls == 0
     assert [event.outcome for event in audit.events()] == ["denied"]
 
 
 @pytest.mark.asyncio
-async def test_failed_execution_is_audited_and_reraised() -> None:
+async def test_execution_without_human_approval_is_denied(tmp_path) -> None:
+    backend = StubBackend()
+    audit = AuditLog()
+    approvals = HumanApprovalManager(
+        SQLiteExecutionApprovalStore(tmp_path / "approvals.sqlite3"),
+        allowed_approvers={"human-admin"},
+    )
+    executor = make_executor(backend, audit, approvals)
+
+    with pytest.raises(Exception, match="human approval"):
+        await executor.execute(
+            "agent-1", SandboxExecutionRequest(source="pass"), approval_id="missing"
+        )
+    assert backend.calls == 0
+    assert [event.outcome for event in audit.events()] == ["approval_denied"]
+
+
+@pytest.mark.asyncio
+async def test_failed_execution_is_audited_and_reraised(tmp_path) -> None:
     backend = StubBackend(fail=True)
     audit = AuditLog()
-    permissions = PermissionPolicy({
-        Permission("agent-1", SANDBOX_EXECUTE_ACTION, SANDBOX_PYTHON_RESOURCE)
-    })
-    executor = AuthorizedSandboxExecutor(backend, permissions, audit)
+    request = SandboxExecutionRequest(source="pass")
+    approvals, approval_id = make_approval(tmp_path, request)
+    executor = make_executor(backend, audit, approvals)
 
     with pytest.raises(RuntimeError, match="backend failed"):
-        await executor.execute("agent-1", SandboxExecutionRequest(source="pass"))
+        await executor.execute("agent-1", request, approval_id=approval_id)
 
     assert [event.outcome for event in audit.events()] == ["started", "failed"]
 
 
 @pytest.mark.asyncio
-async def test_timed_out_execution_has_distinct_audit_outcome() -> None:
+async def test_timed_out_execution_has_distinct_audit_outcome(tmp_path) -> None:
     backend = StubBackend(timed_out=True)
     audit = AuditLog()
-    permissions = PermissionPolicy({
-        Permission("agent-1", SANDBOX_EXECUTE_ACTION, SANDBOX_PYTHON_RESOURCE)
-    })
-    executor = AuthorizedSandboxExecutor(backend, permissions, audit)
+    request = SandboxExecutionRequest(source="while True: pass")
+    approvals, approval_id = make_approval(tmp_path, request)
+    executor = make_executor(backend, audit, approvals)
 
-    await executor.execute("agent-1", SandboxExecutionRequest(source="while True: pass"))
+    await executor.execute("agent-1", request, approval_id=approval_id)
 
     assert [event.outcome for event in audit.events()] == ["started", "timed_out"]
 
@@ -99,14 +134,11 @@ async def test_authorized_execution_supports_persistent_sqlite_audit(tmp_path) -
 
     backend = StubBackend()
     audit = SQLiteAuditLog(tmp_path / "security-audit.sqlite3")
-    permissions = PermissionPolicy({
-        Permission("agent-1", SANDBOX_EXECUTE_ACTION, SANDBOX_PYTHON_RESOURCE)
-    })
-    executor = AuthorizedSandboxExecutor(backend, permissions, audit)
+    request = SandboxExecutionRequest(source="print('not stored in audit')")
+    approvals, approval_id = make_approval(tmp_path, request)
+    executor = make_executor(backend, audit, approvals)
 
-    await executor.execute(
-        "agent-1", SandboxExecutionRequest(source="print('not stored in audit')")
-    )
+    await executor.execute("agent-1", request, approval_id=approval_id)
 
     reopened = SQLiteAuditLog(tmp_path / "security-audit.sqlite3")
     events = reopened.events()
