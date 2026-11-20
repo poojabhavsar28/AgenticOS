@@ -129,3 +129,39 @@ async def test_execution_emits_failure_event(tmp_path) -> None:
     emitted = events.list_events(captured.value.record.run_id)
     assert [event.event_type for event in emitted] == ["queued", "started", "failed"]
     assert all("private implementation detail" not in str(event.data) for event in emitted)
+
+
+@pytest.mark.asyncio
+async def test_cooperative_cancellation_records_cancelled_terminal_state() -> None:
+    from agenticos.runtime.progress import RunCancelledError
+
+    class CooperativeWorkflow:
+        async def run(self, task: str, memory_context: str = "") -> dict[str, str]:
+            return {"task": task}
+
+        async def run_with_progress(
+            self,
+            task: str,
+            *,
+            run_id: str,
+            memory_context: str,
+            progress_callback,
+            cancellation_event: asyncio.Event,
+        ) -> dict[str, str]:
+            await cancellation_event.wait()
+            raise RunCancelledError("cancelled at a safe boundary")
+
+    checkpoints = InMemoryCheckpointStore()
+    manager = ExecutionManager(CooperativeWorkflow(), checkpoints)
+    task = asyncio.create_task(manager.execute("cancel me"))
+    while not manager._cancellation_events:
+        await asyncio.sleep(0)
+    run_id = next(iter(manager._cancellation_events))
+
+    assert await manager.cancel_run(run_id) is True
+    record = await task
+
+    assert record.status is RunStatus.CANCELLED
+    assert record.error == "Run was cancelled"
+    assert (await checkpoints.load(run_id))["status"] == "cancelled"
+    assert await manager.cancel_run(run_id) is False
