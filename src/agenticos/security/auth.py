@@ -15,10 +15,13 @@ class AuthenticatedPrincipal:
 class BearerTokenAuthenticator:
     """Authenticate one configured operator token without retaining plaintext."""
 
-    def __init__(self, token: str) -> None:
+    def __init__(self, token: str, *, principal_id: str = "local-operator") -> None:
         if not token or not token.strip():
             raise ValueError("API bearer token must be configured")
+        if not principal_id or not principal_id.strip():
+            raise ValueError("Principal identity must be non-empty")
         self._token_digest = hashlib.sha256(token.encode("utf-8")).digest()
+        self._principal_id = principal_id
 
     def authenticate(self, authorization: str | None) -> AuthenticatedPrincipal | None:
         if not authorization:
@@ -29,4 +32,4 @@ class BearerTokenAuthenticator:
         supplied_digest = hashlib.sha256(credential.encode("utf-8")).digest()
         if not hmac.compare_digest(self._token_digest, supplied_digest):
             return None
-        return AuthenticatedPrincipal(principal_id="local-operator")
+        return AuthenticatedPrincipal(principal_id=self._principal_id)
