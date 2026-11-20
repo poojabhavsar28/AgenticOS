@@ -1,5 +1,6 @@
 """Sequential LangGraph workflow for coding tasks."""
 
+import asyncio
 from time import perf_counter
 from typing import Any
 
@@ -11,6 +12,7 @@ from agenticos.runtime.progress import (
     ProgressCallback,
     StageEventType,
     StageProgress,
+    RunCancelledError,
 )
 from agenticos.runtime.prompts import CODER, PLANNER, REVIEWER, TEST_PLANNER
 from agenticos.runtime.state import AgentState
@@ -53,10 +55,17 @@ class CodingWorkflow:
     async def _run_stage(
         self, state: AgentState, stage: AgentStage, operation
     ) -> dict[str, str]:
+        cancellation_event = state.get("cancellation_event")
+        if cancellation_event is not None and cancellation_event.is_set():
+            raise RunCancelledError("Run cancellation requested")
         started = perf_counter()
         self._emit(state, stage, StageEventType.STARTED)
         try:
             result = await operation()
+            if cancellation_event is not None and cancellation_event.is_set():
+                raise RunCancelledError("Run cancellation requested")
+        except RunCancelledError:
+            raise
         except Exception:
             self._emit(
                 state,
@@ -118,11 +127,13 @@ class CodingWorkflow:
         run_id: str,
         memory_context: str = "",
         progress_callback: ProgressCallback,
+        cancellation_event: asyncio.Event | None = None,
     ) -> AgentState:
         state: dict[str, Any] = {
             "task": task,
             "memory_context": memory_context,
             "run_id": run_id,
             "progress_callback": progress_callback,
+            "cancellation_event": cancellation_event,
         }
         return await self.graph.ainvoke(state)
