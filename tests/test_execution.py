@@ -5,8 +5,8 @@ import asyncio
 import pytest
 
 from agenticos.runtime.checkpoints import InMemoryCheckpointStore
-from agenticos.runtime.execution import ExecutionManager, RunExecutionError, RunStatus
 from agenticos.runtime.events import SQLiteRunEventStore
+from agenticos.runtime.execution import ExecutionManager, RunExecutionError, RunStatus
 
 
 class SuccessfulWorkflow:
