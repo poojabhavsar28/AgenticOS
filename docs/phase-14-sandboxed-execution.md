@@ -33,7 +33,7 @@ The container is a defense-in-depth boundary, not a guarantee against every cont
 5. Stage only explicitly approved source files into a fresh temporary context.
 6. Enforce timeout, CPU, memory, PID, input and output bounds, and reliably clean up containers and temporary data.
 7. Keep execution opt-in and integrate it with workspace approval and tool authorization; generated code must not execute automatically merely because an agent produced it.
-8. Emit bounded, sanitized audit events for denied, started, failed, timed-out and completed executions. The authorization wrapper checks an explicit `sandbox.execute` grant, consumes a one-time human approval bound to the exact request, and audits execution outcomes. Approval is currently exposed as a Python service; authenticated API/workflow wiring remains pending.
+8. Emit bounded, sanitized audit events for denied, started, failed, timed-out and completed executions. The authorization wrapper checks an explicit `sandbox.execute` grant, consumes a one-time human approval bound to the exact request, and audits execution outcomes. Approval is exposed through authenticated request/review/execute API routes; agent tool/workflow integration remains pending.
 9. Add deterministic unit tests using a fake sandbox runtime, plus Docker integration tests that run only when an approved local image/runtime is available.
 10. Document installation, image preparation, configuration, threat model and operational limitations.
 
@@ -52,8 +52,8 @@ The container is a defense-in-depth boundary, not a guarantee against every cont
 1. **Contracts and policy:** typed request/result models, configuration, disabled-by-default policy and sandbox protocol.
 2. **Docker runner:** hardened container creation, bounded input/output, timeout and cleanup.
 3. **Authorization integration:** principal/action/resource permission checks and sanitized audit events (implemented in the authorized executor).
-4. **Human approval service:** persistent SQLite approval records, distinct allowlisted approver, exact-request hash binding, bounded expiry and atomic single-use consumption (implemented; API/workflow wiring pending).\n5. **API/workflow integration:** authenticated approval request/review endpoints and opt-in execution tool with strict allowlists and no automatic execution (not yet implemented).
-5. **Verification and docs:** unit tests, optional Docker integration tests, security regression tests and operator documentation.
+4. **Human approval service:** persistent SQLite approval records, distinct allowlisted approver, exact-request hash binding, bounded expiry and atomic single-use consumption (implemented).\n5. **API/workflow integration:** authenticated approval request/review endpoints and opt-in execution tool with strict allowlists and no automatic execution (not yet implemented).
+6. **Verification and docs:** unit tests, optional Docker integration tests, security regression tests and operator documentation.
 
 Each step should be delivered as a small, focused commit. Do not merge this phase into `dev` or `main` until the phase-specific checks pass and the user explicitly approves the merge.
 
@@ -65,7 +65,7 @@ Each step should be delivered as a small, focused commit. Do not merge this phas
 - API callers cannot choose arbitrary images, executable paths, mounts, environment variables, or runtime flags.
 - Timeout and cancellation terminate execution and trigger container cleanup; output is capped by Docker's local log rotation and the request's byte limit.
 - Containers and temporary data are cleaned up on success, failure, cancellation and timeout.
-- Permission authorization is checked before execution; denied attempts are audited without leaking secrets. A valid, unexpired, one-time human approval for the exact requester and request is required by the authorized executor; authenticated API/workflow wiring remains pending.
+- Permission authorization is checked before execution; denied attempts are audited without leaking secrets. A valid, unexpired, one-time human approval for the exact requester and request is required by the API executor; the agent workflow does not yet invoke this API.
 - Unit tests run without Docker; Docker integration tests are deterministic and explicitly gated on runtime/image availability.
 - Ruff, full pytest and the evaluation regression gate pass.
 
