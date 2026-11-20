@@ -32,8 +32,10 @@ async def test_workflow_emits_ordered_stage_progress(fake_model) -> None:
         for event_type in (StageEventType.STARTED, StageEventType.COMPLETED)
     ]
     assert all(item.run_id == "run-progress" for item in progress)
-    assert all(item.duration_ms is None for item in progress if item.event_type is StageEventType.STARTED)
-    assert all(item.duration_ms is not None for item in progress if item.event_type is StageEventType.COMPLETED)
+    started = [item for item in progress if item.event_type is StageEventType.STARTED]
+    completed = [item for item in progress if item.event_type is StageEventType.COMPLETED]
+    assert all(item.duration_ms is None for item in started)
+    assert all(item.duration_ms is not None for item in completed)
 
 
 @pytest.mark.asyncio
