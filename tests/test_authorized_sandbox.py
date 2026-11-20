@@ -2,9 +2,9 @@ import pytest
 
 from agenticos.security.audit import AuditLog
 from agenticos.security.authorized_sandbox import (
-    AuthorizedSandboxExecutor,
     SANDBOX_EXECUTE_ACTION,
     SANDBOX_PYTHON_RESOURCE,
+    AuthorizedSandboxExecutor,
 )
 from agenticos.security.docker_sandbox import DockerSandboxBackend
 from agenticos.security.policy import Permission, PermissionDenied, PermissionPolicy
