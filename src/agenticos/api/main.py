@@ -39,8 +39,15 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     config = settings or get_settings()
     if config.app_env.lower() == "production" and not config.api_auth_token:
         raise ValueError("API_AUTH_TOKEN is required when APP_ENV=production")
-    if config.sandbox_enabled and not all((config.api_auth_token, config.sandbox_approval_token, config.sandbox_execution_principal)):
-        raise ValueError("Sandbox requires API_AUTH_TOKEN, SANDBOX_APPROVAL_TOKEN, and SANDBOX_EXECUTION_PRINCIPAL")
+    if config.sandbox_enabled and not all(
+        (config.api_auth_token, config.sandbox_approval_token, config.sandbox_execution_principal)
+    ):
+        raise ValueError(
+            "Sandbox requires API_AUTH_TOKEN, SANDBOX_APPROVAL_TOKEN, "
+            "and SANDBOX_EXECUTION_PRINCIPAL"
+        )
+    if config.sandbox_enabled and config.api_auth_token == config.sandbox_approval_token:
+        raise ValueError("Sandbox approval token must differ from API_AUTH_TOKEN")
     authenticator = (
         BearerTokenAuthenticator(config.api_auth_token) if config.api_auth_token else None
     )
@@ -95,7 +102,15 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     @app.middleware("http")
     async def authenticate_api_requests(request: Request, call_next):
         principal_id = "anonymous"
-        if request.url.path.startswith("/v1/") and authenticator is not None:
+        is_human_approval_route = (
+            request.url.path.startswith("/v1/sandbox/approvals/")
+            and request.url.path.endswith("/approve")
+        )
+        if (
+            request.url.path.startswith("/v1/")
+            and authenticator is not None
+            and not is_human_approval_route
+        ):
             principal = authenticator.authenticate(request.headers.get("authorization"))
             if principal is None:
                 audit_log.record(
