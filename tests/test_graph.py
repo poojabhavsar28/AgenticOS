@@ -61,3 +61,45 @@ async def test_workflow_emits_failed_stage_without_model_output(fake_model) -> N
         (AgentStage.PLANNER, StageEventType.FAILED),
     ]
     assert all(not hasattr(item, "prompt") for item in progress)
+
+
+@pytest.mark.asyncio
+async def test_workflow_dispatches_explicit_tools_through_registry(fake_model) -> None:
+    from agenticos.runtime.tools import ToolRegistry
+    from agenticos.security.policy import Permission, PermissionPolicy
+
+    class EchoTool:
+        name = "echo"
+
+        async def execute(self, arguments: dict[str, object]) -> dict[str, object]:
+            return {"echo": arguments["value"]}
+
+    registry = ToolRegistry(
+        policy=PermissionPolicy({Permission("operator", "execute", "echo")})
+    )
+    registry.register(EchoTool())
+    workflow = CodingWorkflow(fake_model, tool_registry=registry)
+
+    result = await workflow.execute_tool(
+        "echo", {"value": "explicit request"}, principal_id="operator"
+    )
+
+    assert result == {"echo": "explicit request"}
+
+
+@pytest.mark.asyncio
+async def test_workflow_tool_dispatch_is_default_deny(fake_model) -> None:
+    from agenticos.runtime.tools import ToolRegistry
+
+    class EchoTool:
+        name = "echo"
+
+        async def execute(self, arguments: dict[str, object]) -> dict[str, object]:
+            return arguments
+
+    registry = ToolRegistry()
+    registry.register(EchoTool())
+    workflow = CodingWorkflow(fake_model, tool_registry=registry)
+
+    with pytest.raises(PermissionError, match="Permission denied"):
+        await workflow.execute_tool("echo", {}, principal_id="operator")
