@@ -10,8 +10,8 @@ from agenticos.inference.base import ModelClient
 from agenticos.runtime.progress import (
     AgentStage,
     ProgressCallback,
-    StageEventType,
     RunCancelledError,
+    StageEventType,
     StageProgress,
 )
 from agenticos.runtime.prompts import CODER, PLANNER, REVIEWER, TEST_PLANNER
