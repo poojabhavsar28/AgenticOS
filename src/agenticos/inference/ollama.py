@@ -70,7 +70,7 @@ class OllamaClient:
                 async for line in response.aiter_lines():
                     if not line:
                         continue
-                    if len(line) > self.max_chunk_chars * 2:
+                    if len(line) > max(4_096, self.max_chunk_chars * 2):
                         raise RuntimeError("Ollama stream frame exceeds the size limit")
                     try:
                         frame = json.loads(line)
