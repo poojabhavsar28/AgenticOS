@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from agenticos.runtime.checkpoints import CheckpointStore
 from agenticos.runtime.events import SQLiteRunEventStore
-from agenticos.runtime.progress import StageProgress
+from agenticos.runtime.progress import RunCancelledError, StageProgress
 
 
 class Workflow(Protocol):
@@ -68,6 +68,7 @@ class ExecutionManager:
         self.event_store = event_store
         self.timeout_seconds = timeout_seconds
         self._semaphore = asyncio.Semaphore(max_concurrent_runs)
+        self._cancellation_events: dict[str, asyncio.Event] = {}
 
     def _emit(self, record: RunRecord, event_type: str) -> None:
         if self.event_store is not None:
@@ -84,7 +85,17 @@ class ExecutionManager:
             data["duration_ms"] = progress.duration_ms
         self.event_store.append(progress.run_id, progress.event_type.value, data)
 
-    async def _run_workflow(self, record: RunRecord, memory_context: str) -> dict[str, Any]:
+    async def cancel_run(self, run_id: str) -> bool:
+        """Request cooperative cancellation for an active run."""
+        cancellation_event = self._cancellation_events.get(run_id)
+        if cancellation_event is None:
+            return False
+        cancellation_event.set()
+        return True
+
+    async def _run_workflow(
+        self, record: RunRecord, memory_context: str, cancellation_event: asyncio.Event
+    ) -> dict[str, Any]:
         run_with_progress = getattr(self.workflow, "run_with_progress", None)
         if run_with_progress is not None:
             return await run_with_progress(
@@ -92,8 +103,12 @@ class ExecutionManager:
                 run_id=record.run_id,
                 memory_context=memory_context,
                 progress_callback=self._emit_stage_progress,
+                cancellation_event=cancellation_event,
             )
-        return await self.workflow.run(record.task, memory_context=memory_context)
+        result = await self.workflow.run(record.task, memory_context=memory_context)
+        if cancellation_event.is_set():
+            raise RunCancelledError("Run cancellation requested")
+        return result
 
     async def _checkpoint(self, record: RunRecord) -> None:
         record.updated_at = datetime.now(UTC).isoformat()
@@ -111,6 +126,8 @@ class ExecutionManager:
             created_at=now,
             updated_at=now,
         )
+        cancellation_event = asyncio.Event()
+        self._cancellation_events[record.run_id] = cancellation_event
         try:
             await self._checkpoint(record)
             self._emit(record, "queued")
@@ -119,13 +136,19 @@ class ExecutionManager:
                 await self._checkpoint(record)
                 self._emit(record, "started")
                 record.result = await asyncio.wait_for(
-                    self._run_workflow(record, memory_context),
+                    self._run_workflow(record, memory_context, cancellation_event),
                     timeout=self.timeout_seconds,
                 )
                 record.status = RunStatus.COMPLETED
                 await self._checkpoint(record)
                 self._emit(record, "completed")
                 return record
+        except RunCancelledError:
+            record.status = RunStatus.CANCELLED
+            record.error = "Run was cancelled"
+            await self._checkpoint(record)
+            self._emit(record, "cancelled")
+            return record
         except asyncio.CancelledError:
             record.status = RunStatus.CANCELLED
             record.error = "Run was cancelled"
@@ -142,3 +165,5 @@ class ExecutionManager:
             await self._checkpoint(record)
             self._emit(record, "failed")
             raise RunExecutionError(record) from exc
+        finally:
+            self._cancellation_events.pop(record.run_id, None)
