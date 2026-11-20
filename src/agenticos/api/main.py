@@ -149,6 +149,41 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             test_plan=str(result.get("test_plan", "")),
         )
 
+    @app.post("/v1/runs/start", status_code=202)
+    async def start_run(payload: RunRequest, request: Request) -> dict[str, str]:
+        try:
+            resolve_workspace_path(config.workspace_root, payload.workspace)
+            store = request.app.state.memory
+            history = store.get_recent_messages(payload.session_id)
+            project_items = store.get_project_context(payload.workspace)
+            repository_items = (
+                request.app.state.repository_index.search(payload.workspace, payload.task)
+                if payload.include_repository_context
+                else []
+            )
+            memory_context = build_memory_context(history, project_items, repository_items)
+            store.append_message(payload.session_id, "user", payload.task)
+            run_id = request.app.state.execution.start(
+                payload.task, memory_context=memory_context
+            )
+        except WorkspaceBoundaryError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"run_id": run_id, "status": "queued"}
+
+    @app.post("/v1/runs/{run_id}/cancel", status_code=202)
+    async def cancel_run(run_id: str, request: Request) -> dict[str, str]:
+        snapshot = await request.app.state.execution.get_snapshot(run_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        if snapshot.get("status") in {"completed", "failed", "cancelled"}:
+            raise HTTPException(status_code=409, detail="Run is already terminal")
+        accepted = await request.app.state.execution.cancel_run(run_id)
+        if not accepted:
+            raise HTTPException(status_code=409, detail="Run is not currently cancellable")
+        return {"run_id": run_id, "status": "cancellation_requested"}
+
     @app.get("/v1/sessions/{session_id}/messages")
     async def get_session_messages(
         session_id: str, request: Request, limit: int = 12
