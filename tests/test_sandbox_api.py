@@ -111,3 +111,46 @@ def test_sandbox_api_is_unavailable_when_disabled(fake_model, tmp_path):
         json={"request": {"source": "print('hello')"}},
     )
     assert response.status_code == 503
+
+
+def test_human_reviewer_can_inspect_exact_code_before_approval(fake_model, tmp_path):
+    client = make_sandbox_client(fake_model, tmp_path)
+    created = client.post(
+        "/v1/sandbox/approvals",
+        headers={"Authorization": "Bearer requester-secret"},
+        json={"request": {"source": "print('review me')"}},
+    )
+    approval_id = created.json()["approval_id"]
+    reviewer_headers = {"X-Sandbox-Approval-Token": "Bearer human-approval-secret"}
+
+    unauthorized = client.get("/v1/sandbox/reviews")
+    assert unauthorized.status_code == 401
+
+    queue = client.get("/v1/sandbox/reviews", headers=reviewer_headers)
+    assert queue.status_code == 200
+    assert len(queue.json()) == 1
+    assert "request" not in queue.json()[0]
+
+    review = client.get(
+        f"/v1/sandbox/reviews/{approval_id}", headers=reviewer_headers
+    )
+    assert review.status_code == 200
+    assert review.json()["request"]["source"] == "print('review me')"
+    assert review.json()["request_hash"]
+    assert review.json()["request"]["limits"]["timeout_seconds"] == 5.0
+
+
+def test_sandbox_review_page_is_served_only_when_enabled(fake_model, tmp_path):
+    enabled = make_sandbox_client(fake_model, tmp_path)
+    page = enabled.get("/sandbox/review")
+    assert page.status_code == 200
+    assert "Sandbox execution review" in page.text
+    assert "I inspected the full source code" in page.text
+
+    disabled_settings = Settings(
+        workspace_root=tmp_path / "disabled",
+        memory_database_path=tmp_path / "disabled-memory.sqlite3",
+        operations_database_path=tmp_path / "disabled-operations.sqlite3",
+    )
+    disabled = TestClient(create_app(disabled_settings, model_client=fake_model))
+    assert disabled.get("/sandbox/review").status_code == 404
