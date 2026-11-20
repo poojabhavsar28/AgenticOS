@@ -341,6 +341,8 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         principal = getattr(request.state, "principal", None)
         if principal is None:
             raise HTTPException(status_code=401, detail="Authenticated requester required")
+        if request.app.state.workflow.tool_registry is None:
+            raise HTTPException(status_code=503, detail="Agent tools are not configured")
         try:
             return await request.app.state.workflow.execute_tool(
                 tool_name, payload, principal_id=principal.principal_id
