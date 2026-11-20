@@ -15,4 +15,5 @@ class AgentState(TypedDict, total=False):
     test_plan: str
     run_id: str
     progress_callback: ProgressCallback
+    token_callback: TokenChunkCallback
     cancellation_check: Callable[[], None]
