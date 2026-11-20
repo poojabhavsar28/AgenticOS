@@ -24,13 +24,27 @@ from agenticos.runtime.checkpoints import SQLiteCheckpointStore
 from agenticos.runtime.events import SQLiteRunEventStore
 from agenticos.runtime.execution import ExecutionManager, RunExecutionError
 from agenticos.runtime.graph import CodingWorkflow
-from agenticos.security.approval import ApprovalError, HumanApprovalManager, SQLiteExecutionApprovalStore
+from agenticos.security.approval import (
+    ApprovalError,
+    HumanApprovalManager,
+    SQLiteExecutionApprovalStore,
+)
 from agenticos.security.audit import SQLiteAuditLog
 from agenticos.security.auth import BearerTokenAuthenticator
 from agenticos.security.authorized_sandbox import AuthorizedSandboxExecutor
-from agenticos.security.docker_sandbox import DockerSandboxBackend, DockerSandboxError
-from agenticos.security.policy import Permission, PermissionDenied, PermissionPolicy
-from agenticos.security.sandbox import SandboxExecutionRequest, sandbox_policy_from_settings
+from agenticos.security.docker_sandbox import (
+    DockerSandboxBackend,
+    DockerSandboxError,
+)
+from agenticos.security.policy import (
+    Permission,
+    PermissionDenied,
+    PermissionPolicy,
+)
+from agenticos.security.sandbox import (
+    SandboxExecutionRequest,
+    sandbox_policy_from_settings,
+)
 from agenticos.security.workspace import WorkspaceBoundaryError, resolve_workspace_path
 from agenticos.workspace import WorkspaceFileService
 
@@ -40,7 +54,11 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     if config.app_env.lower() == "production" and not config.api_auth_token:
         raise ValueError("API_AUTH_TOKEN is required when APP_ENV=production")
     if config.sandbox_enabled and not all(
-        (config.api_auth_token, config.sandbox_approval_token, config.sandbox_execution_principal)
+        (
+            config.api_auth_token,
+            config.sandbox_approval_token,
+            config.sandbox_execution_principal,
+        )
     ):
         raise ValueError(
             "Sandbox requires API_AUTH_TOKEN, SANDBOX_APPROVAL_TOKEN, "
@@ -78,10 +96,20 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             SQLiteExecutionApprovalStore(config.operations_database_path),
             allowed_approvers={config.sandbox_approver_id},
         )
-        permission_policy = PermissionPolicy({Permission(config.sandbox_execution_principal, "sandbox.execute", "sandbox:python")})
+        permission_policy = PermissionPolicy(
+            {
+                Permission(
+                    config.sandbox_execution_principal,
+                    "sandbox.execute",
+                    "sandbox:python",
+                )
+            }
+        )
         sandbox_executor = AuthorizedSandboxExecutor(
             DockerSandboxBackend(sandbox_policy_from_settings(config)),
-            permission_policy, audit_log, sandbox_approvals,
+            permission_policy,
+            audit_log,
+            sandbox_approvals,
         )
 
     app = FastAPI(title=config.app_name, version="0.4.0")
@@ -175,7 +203,11 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             raise HTTPException(status_code=422, detail="approval_id is required")
         try:
             execution_request = SandboxExecutionRequest.model_validate(payload.get("request"))
-            result = await executor.execute(principal.principal_id, execution_request, approval_id=approval_id)
+            result = await executor.execute(
+                principal.principal_id,
+                execution_request,
+                approval_id=approval_id,
+            )
         except (ApprovalError, PermissionDenied) as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         except (ValueError, TypeError) as exc:
