@@ -23,6 +23,10 @@ Expose meaningful progress for each agent stage and allow a caller to request sa
 - Emits start, completion, and failure events for Planner, Coder, Reviewer, and Test Planner.
 - Persists stage events through the existing SQLite run-event store. Payloads contain stage, timestamp, and duration only; they exclude prompts and model output.
 - Added deterministic tests for ordered stage events and failure metadata.
+- Added asynchronous run submission at `POST /v1/runs/start`, returning a run ID immediately.
+- Added `POST /v1/runs/{run_id}/cancel` with terminal-state and unknown-run checks.
+- Cancellation is cooperative: an in-flight model call is allowed to return, then the workflow stops at the next stage boundary. The run is marked cancelled only after execution exits.
+- Added tests for cancellation state persistence, API cancellation, and terminal event emission.
 
 ## Safety and reliability constraints
 
