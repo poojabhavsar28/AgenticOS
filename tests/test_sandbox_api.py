@@ -1,5 +1,7 @@
 """HTTP tests for authenticated sandbox approval and execution routes."""
 
+# ruff: noqa: I001
+
 import pytest
 from fastapi.testclient import TestClient
 
