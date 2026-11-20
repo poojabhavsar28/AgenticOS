@@ -1,6 +1,10 @@
 import pytest
 
-from agenticos.security.approval import HumanApprovalManager, SQLiteExecutionApprovalStore
+from agenticos.security.approval import (
+    ApprovalError,
+    HumanApprovalManager,
+    SQLiteExecutionApprovalStore,
+)
 from agenticos.security.audit import AuditLog
 from agenticos.security.authorized_sandbox import (
     SANDBOX_EXECUTE_ACTION,
@@ -93,7 +97,7 @@ async def test_execution_without_human_approval_is_denied(tmp_path) -> None:
     )
     executor = make_executor(backend, audit, approvals)
 
-    with pytest.raises(Exception, match="human approval"):
+    with pytest.raises(ApprovalError, match="human approval"):
         await executor.execute(
             "agent-1", SandboxExecutionRequest(source="pass"), approval_id="missing"
         )
