@@ -16,6 +16,14 @@ Expose meaningful progress for each agent stage and allow a caller to request sa
 - Add deterministic tests using fake workflows; tests must not require Ollama or network access.
 - Document supported cancellation boundaries, progress event schema, and SSE client behavior.
 
+## Implemented so far
+
+- Added typed `AgentStage`, `StageEventType`, and `StageProgress` contracts.
+- Added per-invocation progress callbacks to the LangGraph workflow, avoiding shared mutable callback state across concurrent runs.
+- Emits start, completion, and failure events for Planner, Coder, Reviewer, and Test Planner.
+- Persists stage events through the existing SQLite run-event store. Payloads contain stage, timestamp, and duration only; they exclude prompts and model output.
+- Added deterministic tests for ordered stage events and failure metadata.
+
 ## Safety and reliability constraints
 
 - Do not log prompts, model outputs, bearer tokens, secrets, or file contents in progress metadata.
