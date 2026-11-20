@@ -113,7 +113,7 @@ class SQLiteExecutionApprovalStore:
             row = connection.execute(
                 """SELECT requester_id, request_hash, status, expires_at
                    FROM sandbox_execution_approvals WHERE approval_id = ?""",
-                (approval_id,),
+                (self._approval_digest(approval_id),),
             ).fetchone()
             if (
                 row is None
