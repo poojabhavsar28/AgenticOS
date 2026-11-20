@@ -1,6 +1,7 @@
 """Security policy and execution boundary APIs."""
 
 from agenticos.security.audit import AuditEvent, AuditLog, SQLiteAuditLog
+from agenticos.security.docker_sandbox import DockerSandboxBackend, DockerSandboxError
 from agenticos.security.execution import (
     ExecutionLimits,
     ExecutionResult,
@@ -13,6 +14,7 @@ from agenticos.security.sandbox import (
     SandboxExecutionResult,
     SandboxLimits,
     SandboxPolicy,
+    sandbox_policy_from_settings,
 )
 
 __all__ = [
@@ -30,4 +32,7 @@ __all__ = [
     "SandboxExecutionResult",
     "SandboxLimits",
     "SandboxPolicy",
+    "sandbox_policy_from_settings",
+    "DockerSandboxBackend",
+    "DockerSandboxError",
 ]
