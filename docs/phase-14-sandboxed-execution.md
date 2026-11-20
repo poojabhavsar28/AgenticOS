@@ -19,7 +19,7 @@ The container is a defense-in-depth boundary, not a guarantee against every cont
 - Provide only a fresh temporary working directory; do not mount the repository, home directory, Docker socket, credentials, or broad host paths.
 - Make temporary storage size-bounded and destroy the container and temporary files after every run.
 - Do not allow privileged mode, host PID/IPC namespaces, device access, arbitrary mounts, image overrides from API callers, or caller-supplied Docker flags.
-- Capture stdout and stderr with bounded output; terminate on timeout or resource-limit violation.
+- Capture container logs with the Docker local logging driver's 1 MiB rotation cap, then truncate the returned combined output to the request limit. The current CLI log path combines stdout/stderr into the result's stdout field; separate stream preservation remains a follow-up. Terminate on timeout or cancellation.
 - Return structured execution results without exposing host paths, environment variables, secrets, or runtime internals.
 
 ## Scope
@@ -61,7 +61,7 @@ Each step should be delivered as a small, focused commit. Do not merge this phas
 - No test path can cause a host-shell fallback.
 - Container configuration enforces non-root, read-only root filesystem, no network, no capabilities, no-new-privileges, PID/CPU/memory limits and bounded temporary storage.
 - API callers cannot choose arbitrary images, executable paths, mounts, environment variables, or runtime flags.
-- Timeout and output limits terminate execution and return bounded, structured results.
+- Timeout and cancellation terminate execution and trigger container cleanup; output is capped by Docker's local log rotation and the request's byte limit.
 - Containers and temporary data are cleaned up on success, failure, cancellation and timeout.
 - Authorization is checked before execution; denied attempts are audited without leaking secrets.
 - Unit tests run without Docker; Docker integration tests are deterministic and explicitly gated on runtime/image availability.
