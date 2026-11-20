@@ -22,7 +22,7 @@ def test_sandbox_is_disabled_by_default() -> None:
 def test_enabled_sandbox_requires_digest_pinned_approved_image() -> None:
     with pytest.raises(ValidationError, match="requires an approved"):
         SandboxPolicy(enabled=True)
-    with pytest.raises(ValidationError, match="pinned by sha256"):
+    with pytest.raises(ValidationError, match="full sha256 digest"):
         SandboxPolicy(enabled=True, image_ref="python:3.11-slim")
 
     policy = SandboxPolicy(
