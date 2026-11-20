@@ -25,8 +25,10 @@ class SQLiteExecutionApprovalStore:
                 """
                 CREATE TABLE IF NOT EXISTS sandbox_execution_approvals (
                     approval_id TEXT PRIMARY KEY,
+                    public_id TEXT UNIQUE,
                     requester_id TEXT NOT NULL,
                     request_hash TEXT NOT NULL,
+                    request_json TEXT,
                     created_at REAL NOT NULL,
                     expires_at REAL NOT NULL,
                     status TEXT NOT NULL,
@@ -35,6 +37,16 @@ class SQLiteExecutionApprovalStore:
                 )
                 """
             )
+            columns = {row["name"] for row in connection.execute("PRAGMA table_info(sandbox_execution_approvals)").fetchall()}
+            if "public_id" not in columns:
+                connection.execute("ALTER TABLE sandbox_execution_approvals ADD COLUMN public_id TEXT")
+            if "request_json" not in columns:
+                connection.execute("ALTER TABLE sandbox_execution_approvals ADD COLUMN request_json TEXT")
+        try:
+            self.database_path.chmod(0o600)
+        except OSError:
+            # Windows ACLs are managed by the host; deployment docs require a private data dir.
+            pass
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path, timeout=10.0)
@@ -65,19 +77,69 @@ class SQLiteExecutionApprovalStore:
             connection.execute(
                 """
                 INSERT INTO sandbox_execution_approvals
-                    (approval_id, requester_id, request_hash, created_at,
-                     expires_at, status)
-                VALUES (?, ?, ?, ?, ?, 'pending')
+                    (approval_id, public_id, requester_id, request_hash, request_json,
+                     created_at, expires_at, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
                 """,
                 (
                     self._approval_digest(approval_id),
+                    approval_id,
                     requester_id,
                     self.fingerprint(request),
+                    json.dumps(request.model_dump(mode="json"), sort_keys=True, separators=(",", ":")),
                     now,
                     now + ttl_seconds,
                 ),
             )
         return approval_id
+
+    def list_pending(self) -> list[dict[str, object]]:
+        """Return pending review records for the authenticated approver."""
+        now = time.time()
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE sandbox_execution_approvals SET status = 'expired', request_json = NULL WHERE status = 'pending' AND expires_at <= ?",
+                (now,),
+            )
+            rows = connection.execute(
+                "SELECT public_id, requester_id, request_hash, request_json, created_at, expires_at, status FROM sandbox_execution_approvals WHERE status = 'pending' AND expires_at > ? AND request_json IS NOT NULL ORDER BY created_at ASC LIMIT 100",
+                (now,),
+            ).fetchall()
+        return [self._review_record(row) for row in rows]
+
+    def get_review(self, approval_id: str) -> dict[str, object] | None:
+        """Return a review record and clear code if the approval has expired."""
+        now = time.time()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT public_id, requester_id, request_hash, request_json, created_at, expires_at, status FROM sandbox_execution_approvals WHERE approval_id = ?",
+                (self._approval_digest(approval_id),),
+            ).fetchone()
+            if row is None:
+                return None
+            if row["expires_at"] <= now and row["request_json"] is not None:
+                connection.execute(
+                    "UPDATE sandbox_execution_approvals SET status = 'expired', request_json = NULL WHERE approval_id = ? AND status IN ('pending', 'approved')",
+                    (self._approval_digest(approval_id),),
+                )
+                row = connection.execute(
+                    "SELECT public_id, requester_id, request_hash, request_json, created_at, expires_at, status FROM sandbox_execution_approvals WHERE approval_id = ?",
+                    (self._approval_digest(approval_id),),
+                ).fetchone()
+        return self._review_record(row)
+
+    @staticmethod
+    def _review_record(row: sqlite3.Row) -> dict[str, object]:
+        return {
+            "approval_id": row["public_id"],
+            "requester_id": row["requester_id"],
+            "request_hash": row["request_hash"],
+            "request": json.loads(row["request_json"]) if row["request_json"] else None,
+            "created_at": row["created_at"],
+            "expires_at": row["expires_at"],
+            "status": row["status"],
+        }
 
     def approve(
         self, approval_id: str, approver_id: str, *, allowed_approvers: frozenset[str]
@@ -127,7 +189,7 @@ class SQLiteExecutionApprovalStore:
                 raise ApprovalError("A valid, matching, unused human approval is required")
             updated = connection.execute(
                 """UPDATE sandbox_execution_approvals
-                   SET status = 'consumed', consumed_at = ?
+                   SET status = 'consumed', consumed_at = ?, request_json = NULL
                    WHERE approval_id = ? AND status = 'approved' AND expires_at > ?""",
                 (now, self._approval_digest(approval_id), now),
             )
@@ -151,6 +213,14 @@ class HumanApprovalManager:
     ) -> str:
         """Create a pending approval bound to this exact request."""
         return self.store.create(requester_id, request, ttl_seconds=ttl_seconds)
+
+    def list_pending(self) -> list[dict[str, object]]:
+        """List pending code-review requests for the approval UI."""
+        return self.store.list_pending()
+
+    def get_review(self, approval_id: str) -> dict[str, object] | None:
+        """Read one request for human inspection before approval."""
+        return self.store.get_review(approval_id)
 
     def approve(self, approval_id: str, approver_id: str) -> None:
         """Approve only when called as an allowlisted, distinct human principal."""
