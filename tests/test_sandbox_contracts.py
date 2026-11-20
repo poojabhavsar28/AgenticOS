@@ -7,6 +7,7 @@ from agenticos.security.sandbox import (
     SandboxExecutionResult,
     SandboxLimits,
     SandboxPolicy,
+    sandbox_policy_from_settings,
 )
 
 
@@ -74,3 +75,12 @@ def test_result_is_bounded_and_immutable() -> None:
         SandboxExecutionResult(exit_code=0, stdout="x" * 256_001, stderr="")
     with pytest.raises(ValidationError):
         result.exit_code = 1
+
+
+def test_settings_are_converted_to_fail_closed_sandbox_policy() -> None:
+    disabled = sandbox_policy_from_settings(Settings(_env_file=None))
+    assert disabled.enabled is False
+    with pytest.raises(ValidationError, match="requires an approved"):
+        sandbox_policy_from_settings(
+            Settings(_env_file=None, sandbox_enabled=True)
+        )
