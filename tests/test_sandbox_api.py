@@ -1,8 +1,7 @@
 """HTTP tests for authenticated sandbox approval and execution routes."""
 
-from fastapi.testclient import TestClient
-
 import pytest
+from fastapi.testclient import TestClient
 
 from agenticos.api.main import create_app
 from agenticos.config import Settings
