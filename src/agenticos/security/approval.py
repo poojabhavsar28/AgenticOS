@@ -79,7 +79,9 @@ class SQLiteExecutionApprovalStore:
             )
         return approval_id
 
-    def approve(self, approval_id: str, approver_id: str, *, allowed_approvers: frozenset[str]) -> None:
+    def approve(
+        self, approval_id: str, approver_id: str, *, allowed_approvers: frozenset[str]
+    ) -> None:
         if not approver_id or approver_id not in allowed_approvers:
             raise ApprovalError("Principal is not authorized to approve sandbox execution")
         now = time.time()
