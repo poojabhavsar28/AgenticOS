@@ -26,6 +26,11 @@ from agenticos.runtime.checkpoints import SQLiteCheckpointStore
 from agenticos.runtime.events import SQLiteRunEventStore
 from agenticos.runtime.execution import ExecutionManager, RunExecutionError
 from agenticos.runtime.graph import CodingWorkflow
+from agenticos.runtime.tools import ToolRegistry
+from agenticos.runtime.sandbox_tools import (
+    ExecuteApprovedCodeTool,
+    RequestCodeExecutionApprovalTool,
+)
 from agenticos.security.approval import (
     ApprovalError,
     HumanApprovalManager,
@@ -124,7 +129,12 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     if config.sandbox_enabled and config.api_auth_token == config.sandbox_approval_token:
         raise ValueError("Sandbox approval token must differ from API_AUTH_TOKEN")
     authenticator = (
-        BearerTokenAuthenticator(config.api_auth_token) if config.api_auth_token else None
+        BearerTokenAuthenticator(
+            config.api_auth_token,
+            principal_id=config.sandbox_execution_principal or "local-operator",
+        )
+        if config.api_auth_token
+        else None
     )
     configure_logging(config.log_level)
     logger = get_logger(__name__)
@@ -148,7 +158,9 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     sandbox_executor = None
     approval_authenticator = None
     if config.sandbox_enabled:
-        approval_authenticator = BearerTokenAuthenticator(config.sandbox_approval_token)
+        approval_authenticator = BearerTokenAuthenticator(
+            config.sandbox_approval_token, principal_id=config.sandbox_approver_id
+        )
         sandbox_approvals = HumanApprovalManager(
             SQLiteExecutionApprovalStore(config.operations_database_path),
             allowed_approvers={config.sandbox_approver_id},
@@ -168,6 +180,22 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             audit_log,
             sandbox_approvals,
         )
+        tool_permissions = PermissionPolicy(
+            {
+                Permission(config.sandbox_execution_principal, "execute", "request_code_execution"),
+                Permission(config.sandbox_execution_principal, "execute", "execute_approved_code"),
+            }
+        )
+        tool_registry = ToolRegistry(policy=tool_permissions, audit_log=audit_log)
+        tool_registry.register(
+            RequestCodeExecutionApprovalTool(
+                sandbox_approvals, config.sandbox_execution_principal
+            )
+        )
+        tool_registry.register(
+            ExecuteApprovedCodeTool(sandbox_executor, config.sandbox_execution_principal)
+        )
+        workflow.tool_registry = tool_registry
 
     app = FastAPI(title=config.app_name, version="0.4.0")
     app.state.settings = config
@@ -275,7 +303,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         if principal is None:
             raise HTTPException(status_code=401, detail="Valid human approval credential required")
         try:
-            manager.approve(approval_id, config.sandbox_approver_id)
+            manager.approve(approval_id, principal.principal_id)
         except ApprovalError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         return {"approval_id": approval_id, "status": "approved"}
@@ -305,6 +333,28 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         except DockerSandboxError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         return result.model_dump(mode="json")
+
+    @app.post("/v1/tools/{tool_name}/execute")
+    async def execute_agent_tool(
+        tool_name: str, payload: dict[str, object], request: Request
+    ) -> dict[str, object]:
+        principal = getattr(request.state, "principal", None)
+        if principal is None:
+            raise HTTPException(status_code=401, detail="Authenticated requester required")
+        try:
+            return await request.app.state.workflow.execute_tool(
+                tool_name, payload, principal_id=principal.principal_id
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except PermissionDenied as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except ApprovalError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except DockerSandboxError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.get("/health")
     async def health() -> dict[str, str]:
