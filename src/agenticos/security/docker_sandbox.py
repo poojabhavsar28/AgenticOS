@@ -5,7 +5,6 @@ defense in depth, not a guarantee against container-runtime or kernel escapes.
 """
 
 import asyncio
-import json
 import tempfile
 from pathlib import Path
 
@@ -42,7 +41,14 @@ class DockerSandboxBackend:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=timeout
+                )
+            except TimeoutError:
+                process.kill()
+                await process.communicate()
+                raise
         except FileNotFoundError as exc:
             raise DockerSandboxError("Docker CLI is unavailable") from exc
         except TimeoutError as exc:
