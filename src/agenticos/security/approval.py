@@ -105,7 +105,10 @@ class SQLiteExecutionApprovalStore:
                 "SELECT public_id, requester_id, request_hash, request_json, created_at, expires_at, status FROM sandbox_execution_approvals WHERE status = 'pending' AND expires_at > ? AND request_json IS NOT NULL ORDER BY created_at ASC LIMIT 100",
                 (now,),
             ).fetchall()
-        return [self._review_record(row) for row in rows]
+        return [
+            {key: value for key, value in self._review_record(row).items() if key != "request"}
+            for row in rows
+        ]
 
     def get_review(self, approval_id: str) -> dict[str, object] | None:
         """Return a review record and clear code if the approval has expired."""
