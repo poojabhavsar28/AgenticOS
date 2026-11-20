@@ -26,6 +26,10 @@ async def test_workflow_emits_ordered_stage_progress(fake_model) -> None:
     )
 
     assert result["test_plan"]
+    assert "run_id" not in result
+    assert "progress_callback" not in result
+    assert "cancellation_check" not in result
+    assert not any(callable(value) for value in result.values())
     assert [(item.stage, item.event_type) for item in progress] == [
         (stage, event_type)
         for stage in AgentStage
