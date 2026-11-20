@@ -89,8 +89,15 @@ class ExecutionManager:
     def start(self, task: str, memory_context: str = "") -> str:
         """Schedule a run and return its ID without waiting for completion."""
         run_id = str(uuid4())
+        cancellation_event = asyncio.Event()
+        self._cancellation_events[run_id] = cancellation_event
         task_handle = asyncio.create_task(
-            self.execute(task, memory_context=memory_context, run_id=run_id)
+            self.execute(
+                task,
+                memory_context=memory_context,
+                run_id=run_id,
+                cancellation_event=cancellation_event,
+            )
         )
         self._run_tasks[run_id] = task_handle
         task_handle.add_done_callback(lambda _: self._run_tasks.pop(run_id, None))
@@ -129,7 +136,12 @@ class ExecutionManager:
         return await self.checkpoints.load(run_id)
 
     async def execute(
-        self, task: str, memory_context: str = "", *, run_id: str | None = None
+        self,
+        task: str,
+        memory_context: str = "",
+        *,
+        run_id: str | None = None,
+        cancellation_event: asyncio.Event | None = None,
     ) -> RunRecord:
         now = datetime.now(UTC).isoformat()
         record = RunRecord(
@@ -139,7 +151,7 @@ class ExecutionManager:
             created_at=now,
             updated_at=now,
         )
-        cancellation_event = asyncio.Event()
+        cancellation_event = cancellation_event or asyncio.Event()
         self._cancellation_events[record.run_id] = cancellation_event
         try:
             await self._checkpoint(record)
