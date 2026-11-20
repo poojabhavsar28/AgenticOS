@@ -15,7 +15,7 @@ class ApprovalError(PermissionError):
 
 
 class SQLiteExecutionApprovalStore:
-    """SQLite-backed approval records; source code is never stored, only its hash."""
+    """SQLite-backed approvals with short-lived source retained only for human review."""
 
     def __init__(self, database_path: Path | str) -> None:
         self.database_path = Path(database_path)
