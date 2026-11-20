@@ -179,32 +179,32 @@ def test_async_run_can_be_cancelled_through_api(tmp_path) -> None:
         async def health(self) -> bool:
             return True
 
-    client = make_client(SlowModel(), tmp_path)
-    started = client.post("/v1/runs/start", json={"task": "long running task"})
-    assert started.status_code == 202
-    run_id = started.json()["run_id"]
+    with make_client(SlowModel(), tmp_path) as client:
+        started = client.post("/v1/runs/start", json={"task": "long running task"})
+        assert started.status_code == 202
+        run_id = started.json()["run_id"]
 
-    deadline = time.monotonic() + 2
-    while time.monotonic() < deadline:
-        status = client.get(f"/v1/runs/{run_id}").json()["status"]
-        if status == "running":
-            break
-        time.sleep(0.005)
-    assert status == "running"
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            status = client.get(f"/v1/runs/{run_id}").json()["status"]
+            if status == "running":
+                break
+            time.sleep(0.005)
+        assert status == "running"
 
-    cancelled = client.post(f"/v1/runs/{run_id}/cancel")
-    assert cancelled.status_code == 202
-    assert cancelled.json()["status"] == "cancellation_requested"
+        cancelled = client.post(f"/v1/runs/{run_id}/cancel")
+        assert cancelled.status_code == 202
+        assert cancelled.json()["status"] == "cancellation_requested"
 
-    deadline = time.monotonic() + 2
-    while time.monotonic() < deadline:
-        snapshot = client.get(f"/v1/runs/{run_id}").json()
-        if snapshot["status"] == "cancelled":
-            break
-        time.sleep(0.005)
-    assert snapshot["status"] == "cancelled"
-    events = client.get(f"/v1/runs/{run_id}/events").json()
-    assert events[-1]["event_type"] == "cancelled"
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            snapshot = client.get(f"/v1/runs/{run_id}").json()
+            if snapshot["status"] == "cancelled":
+                break
+            time.sleep(0.005)
+        assert snapshot["status"] == "cancelled"
+        events = client.get(f"/v1/runs/{run_id}/events").json()
+        assert events[-1]["event_type"] == "cancelled"
 
 
 def test_cancel_endpoint_rejects_unknown_and_terminal_runs(fake_model, tmp_path) -> None:
