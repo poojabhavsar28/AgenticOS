@@ -49,11 +49,13 @@ The container is a defense-in-depth boundary, not a guarantee against every cont
 
 ## Proposed implementation sequence
 
-1. **Contracts and policy:** typed request/result models, configuration, disabled-by-default policy and sandbox protocol.
-2. **Docker runner:** hardened container creation, bounded input/output, timeout and cleanup.
+1. **Contracts and policy:** typed request/result models, configuration, disabled-by-default policy and sandbox protocol (implemented).
+2. **Docker runner:** hardened container creation, bounded input/output, timeout and cleanup (implemented; real Docker integration tests pending).
 3. **Authorization integration:** principal/action/resource permission checks and sanitized audit events (implemented in the authorized executor).
-4. **Human approval service:** persistent SQLite approval records, distinct allowlisted approver, exact-request hash binding, bounded expiry and atomic single-use consumption (implemented).\n5. **API/workflow integration:** authenticated approval request/review endpoints and opt-in execution tool with strict allowlists and no automatic execution (not yet implemented).
-6. **Verification and docs:** unit tests, optional Docker integration tests, security regression tests and operator documentation.
+4. **Human approval service:** persistent SQLite approval records, distinct allowlisted approver, exact-request hash binding, bounded expiry and atomic single-use consumption (implemented).
+5. **API integration:** separate requester and human-approver credentials, authenticated approval request/review endpoints, and an explicit execution endpoint (implemented; end-to-end Docker execution verification pending).
+6. **Agent workflow integration:** expose a narrowly scoped execution tool that requires an approval ID and never executes generated code automatically (not yet implemented).
+7. **Verification and docs:** unit tests, optional Docker integration tests, security regression tests and operator documentation (in progress).
 
 Each step should be delivered as a small, focused commit. Do not merge this phase into `dev` or `main` until the phase-specific checks pass and the user explicitly approves the merge.
 
