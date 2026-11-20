@@ -17,11 +17,15 @@ from agenticos.runtime.progress import (
 )
 from agenticos.runtime.prompts import CODER, PLANNER, REVIEWER, TEST_PLANNER
 from agenticos.runtime.state import AgentState
+from agenticos.runtime.tools import ToolRegistry
 
 
 class CodingWorkflow:
-    def __init__(self, model: ModelClient) -> None:
+    def __init__(
+        self, model: ModelClient, *, tool_registry: ToolRegistry | None = None
+    ) -> None:
         self.model = model
+        self.tool_registry = tool_registry
         graph = StateGraph(AgentState)
         graph.add_node("planner", self._plan)
         graph.add_node("coder", self._code)
@@ -33,6 +37,16 @@ class CodingWorkflow:
         graph.add_edge("reviewer", "test_planner")
         graph.add_edge("test_planner", END)
         self.graph = graph.compile()
+
+    async def execute_tool(
+        self, name: str, arguments: dict[str, object], *, principal_id: str
+    ) -> dict[str, object]:
+        """Execute an explicitly requested tool through the permission-checked registry."""
+        if self.tool_registry is None:
+            raise RuntimeError("Agent tools are not configured")
+        return await self.tool_registry.execute(
+            name, arguments, principal_id=principal_id
+        )
 
     def _emit(
         self,
