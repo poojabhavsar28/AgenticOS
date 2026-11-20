@@ -10,15 +10,15 @@ class RequestCodeExecutionApprovalTool:
 
     name = "request_code_execution"
 
-    def __init__(self, approvals: HumanApprovalManager) -> None:
+    def __init__(self, approvals: HumanApprovalManager, requester_id: str) -> None:
+        if not requester_id.strip():
+            raise ValueError("Requester identity must be non-empty")
         self.approvals = approvals
+        self.requester_id = requester_id
 
     async def execute(self, arguments: dict[str, object]) -> dict[str, object]:
         request = SandboxExecutionRequest.model_validate(arguments.get("request"))
-        requester_id = arguments.get("principal_id")
-        if not isinstance(requester_id, str) or not requester_id.strip():
-            raise ValueError("Authenticated principal_id is required")
-        approval_id = self.approvals.request(requester_id, request)
+        approval_id = self.approvals.request(self.requester_id, request)
         return {
             "approval_id": approval_id,
             "status": "pending_human_review",
@@ -31,18 +31,18 @@ class ExecuteApprovedCodeTool:
 
     name = "execute_approved_code"
 
-    def __init__(self, executor: AuthorizedSandboxExecutor) -> None:
+    def __init__(self, executor: AuthorizedSandboxExecutor, principal_id: str) -> None:
+        if not principal_id.strip():
+            raise ValueError("Principal identity must be non-empty")
         self.executor = executor
+        self.principal_id = principal_id
 
     async def execute(self, arguments: dict[str, object]) -> dict[str, object]:
         request = SandboxExecutionRequest.model_validate(arguments.get("request"))
-        principal_id = arguments.get("principal_id")
         approval_id = arguments.get("approval_id")
-        if not isinstance(principal_id, str) or not principal_id.strip():
-            raise ValueError("Authenticated principal_id is required")
         if not isinstance(approval_id, str) or not approval_id.strip():
             raise ValueError("approval_id is required")
         result = await self.executor.execute(
-            principal_id, request, approval_id=approval_id
+            self.principal_id, request, approval_id=approval_id
         )
         return result.model_dump(mode="json")
