@@ -229,3 +229,80 @@ def test_cancel_endpoint_rejects_unknown_and_terminal_runs(fake_model, tmp_path)
             break
         time.sleep(0.005)
     assert client.post(f"/v1/runs/{run_id}/cancel").status_code == 409
+
+
+def test_agent_tool_api_uses_authenticated_identity_and_human_approval(
+    fake_model, tmp_path
+) -> None:
+    settings = Settings(
+        workspace_root=tmp_path,
+        memory_database_path=tmp_path / "memory.sqlite3",
+        operations_database_path=tmp_path / "operations.sqlite3",
+        api_auth_token="requester-secret",
+        sandbox_enabled=True,
+        sandbox_image="python:3.12-slim@sha256:" + "a" * 64,
+        sandbox_approval_token="human-secret",
+        sandbox_approver_id="reviewer-1",
+        sandbox_execution_principal="local-operator",
+    )
+    with TestClient(create_app(settings, model_client=fake_model)) as client:
+        denied = client.post(
+            "/v1/tools/request_code_execution/execute",
+            json={"request": {"source": "print('hello')"}},
+        )
+        assert denied.status_code == 401
+
+        requested = client.post(
+            "/v1/tools/request_code_execution/execute",
+            headers={"Authorization": "Bearer requester-secret"},
+            json={
+                "request": {"source": "print('hello')"},
+                "principal_id": "attacker-controlled",
+            },
+        )
+        assert requested.status_code == 200
+        body = requested.json()
+        assert body["status"] == "pending_human_review"
+
+        reviews = client.get(
+            "/v1/sandbox/reviews",
+            headers={"X-Sandbox-Approval-Token": "Bearer human-secret"},
+        )
+        assert reviews.status_code == 200
+        assert len(reviews.json()) == 1
+        assert reviews.json()[0]["requester_id"] == "local-operator"
+
+        review = client.get(
+            f"/v1/sandbox/reviews/{body['approval_id']}",
+            headers={"X-Sandbox-Approval-Token": "Bearer human-secret"},
+        )
+        assert review.status_code == 200
+        assert review.json()["request"]["source"] == "print('hello')"
+
+        approved = client.post(
+            f"/v1/sandbox/approvals/{body['approval_id']}/approve",
+            headers={"X-Sandbox-Approval-Token": "Bearer human-secret"},
+        )
+        assert approved.status_code == 200
+        assert approved.json()["status"] == "approved"
+
+
+def test_agent_tool_api_rejects_unknown_tool(fake_model, tmp_path) -> None:
+    settings = Settings(
+        workspace_root=tmp_path,
+        memory_database_path=tmp_path / "memory.sqlite3",
+        operations_database_path=tmp_path / "operations.sqlite3",
+        api_auth_token="requester-secret",
+        sandbox_enabled=True,
+        sandbox_image="python:3.12-slim@sha256:" + "b" * 64,
+        sandbox_approval_token="human-secret",
+        sandbox_approver_id="reviewer-1",
+        sandbox_execution_principal="local-operator",
+    )
+    client = TestClient(create_app(settings, model_client=fake_model))
+    response = client.post(
+        "/v1/tools/not-registered/execute",
+        headers={"Authorization": "Bearer requester-secret"},
+        json={},
+    )
+    assert response.status_code == 404
