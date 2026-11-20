@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from agenticos.runtime.checkpoints import CheckpointStore
 from agenticos.runtime.events import SQLiteRunEventStore
-from agenticos.runtime.progress import RunCancelledError, StageProgress
+from agenticos.runtime.progress import RunCancelledError, StageProgress, TokenChunk
 
 
 class Workflow(Protocol):
@@ -97,6 +97,7 @@ class ExecutionManager:
                 memory_context=memory_context,
                 run_id=run_id,
                 cancellation_event=cancellation_event,
+                token_callback=self._emit_token_chunk,
             )
         )
         self._run_tasks[run_id] = task_handle
@@ -110,6 +111,15 @@ class ExecutionManager:
             return False
         cancellation_event.set()
         return True
+
+    def _emit_token_chunk(self, chunk: TokenChunk) -> None:
+        if self.event_store is None:
+            return
+        self.event_store.append(
+            chunk.run_id,
+            "token",
+            {"stage": chunk.stage.value, "content": chunk.content},
+        )
 
     async def _run_workflow(
         self, record: RunRecord, memory_context: str, cancellation_event: asyncio.Event
