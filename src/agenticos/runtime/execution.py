@@ -69,6 +69,7 @@ class ExecutionManager:
         self.timeout_seconds = timeout_seconds
         self._semaphore = asyncio.Semaphore(max_concurrent_runs)
         self._cancellation_events: dict[str, asyncio.Event] = {}
+        self._run_tasks: dict[str, asyncio.Task[RunRecord]] = {}
 
     def _emit(self, record: RunRecord, event_type: str) -> None:
         if self.event_store is not None:
@@ -84,6 +85,16 @@ class ExecutionManager:
         if progress.duration_ms is not None:
             data["duration_ms"] = progress.duration_ms
         self.event_store.append(progress.run_id, progress.event_type.value, data)
+
+    def start(self, task: str, memory_context: str = "") -> str:
+        """Schedule a run and return its ID without waiting for completion."""
+        run_id = str(uuid4())
+        task_handle = asyncio.create_task(
+            self.execute(task, memory_context=memory_context, run_id=run_id)
+        )
+        self._run_tasks[run_id] = task_handle
+        task_handle.add_done_callback(lambda _: self._run_tasks.pop(run_id, None))
+        return run_id
 
     async def cancel_run(self, run_id: str) -> bool:
         """Request cooperative cancellation for an active run."""
@@ -117,10 +128,12 @@ class ExecutionManager:
     async def get_snapshot(self, run_id: str) -> dict[str, object] | None:
         return await self.checkpoints.load(run_id)
 
-    async def execute(self, task: str, memory_context: str = "") -> RunRecord:
+    async def execute(
+        self, task: str, memory_context: str = "", *, run_id: str | None = None
+    ) -> RunRecord:
         now = datetime.now(UTC).isoformat()
         record = RunRecord(
-            run_id=str(uuid4()),
+            run_id=run_id or str(uuid4()),
             task=task,
             status=RunStatus.QUEUED,
             created_at=now,
