@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     api_auth_token: str | None = None
     sandbox_enabled: bool = False
     sandbox_image: str | None = None
+    sandbox_approval_token: str | None = None
+    sandbox_approver_id: str = "sandbox-human-approver"
+    sandbox_execution_principal: str | None = None
 
 
 @lru_cache(maxsize=1)
