@@ -16,7 +16,7 @@ AgenticOS is a local-first, multi-agent coding platform. Model inference is rout
 - **Evaluation gates:** deterministic checks for all four workflow stages, output bounds, required terms, and aggregate pass-rate thresholds.
 - **Default-deny permissions:** registered tools require explicit principal/action/resource grants before invocation; allowed and denied calls are audited in a bounded in-memory log.
 - **Fail-closed execution:** generated-code execution remains disabled unless an independently isolated backend is explicitly configured.
-- **Durable operations:** SQLite stores run checkpoints and append-only API audit events across process restarts.
+- **Durable operations:** SQLite stores run checkpoints and append-only API audit events across process restarts.\n- **Local token streaming:** Ollama model chunks can be observed as bounded, run-scoped SSE events; non-streaming inference remains supported.
 - **API authentication:** a configured single-operator bearer token protects `/v1/*`; `/health` and `/ready` remain public.
 
 ## Requirements
