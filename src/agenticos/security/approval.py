@@ -163,7 +163,7 @@ class SQLiteExecutionApprovalStore:
                 raise ApprovalError("Requester cannot approve their own execution")
             updated = connection.execute(
                 """UPDATE sandbox_execution_approvals
-                   SET status = 'approved', approver_id = ?
+                   SET status = 'approved', approver_id = ?, request_json = NULL
                    WHERE approval_id = ? AND status = 'pending' AND expires_at > ?""",
                 (approver_id, self._approval_digest(approval_id), now),
             )
