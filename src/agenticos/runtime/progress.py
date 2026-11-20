@@ -52,3 +52,8 @@ class StageProgress:
 
 
 ProgressCallback = Callable[[StageProgress], None]
+
+
+
+class RunCancelledError(Exception):
+    """Raised when a run observes a cooperative cancellation request."""
