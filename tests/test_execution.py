@@ -147,6 +147,7 @@ async def test_cooperative_cancellation_records_cancelled_terminal_state() -> No
             memory_context: str,
             progress_callback,
             cancellation_event: asyncio.Event,
+            token_callback=None,
         ) -> dict[str, str]:
             await cancellation_event.wait()
             raise RunCancelledError("cancelled at a safe boundary")
