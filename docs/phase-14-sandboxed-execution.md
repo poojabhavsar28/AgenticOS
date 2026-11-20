@@ -33,7 +33,7 @@ The container is a defense-in-depth boundary, not a guarantee against every cont
 5. Stage only explicitly approved source files into a fresh temporary context.
 6. Enforce timeout, CPU, memory, PID, input and output bounds, and reliably clean up containers and temporary data.
 7. Keep execution opt-in and integrate it with workspace approval and tool authorization; generated code must not execute automatically merely because an agent produced it.
-8. Emit bounded, sanitized audit events for denied, started, failed, timed-out and completed executions. The authorization wrapper checks an explicit `sandbox.execute` grant, consumes a one-time human approval bound to the exact request, and audits execution outcomes. Approval is exposed through authenticated request/review/execute API routes and a reviewer page at `/sandbox/review`; agent tool/workflow integration remains pending.
+8. Emit bounded, sanitized audit events for denied, started, failed, timed-out and completed executions. The authorization wrapper checks an explicit `sandbox.execute` grant, consumes a one-time human approval bound to the exact request, and audits execution outcomes. Approval is exposed through authenticated request/review/execute API routes and a reviewer page at `/sandbox/review`; the authenticated workflow tool registry now exposes explicit request and execute operations.
 9. Add deterministic unit tests using a fake sandbox runtime, plus Docker integration tests that run only when an approved local image/runtime is available.
 10. Document installation, image preparation, configuration, threat model and operational limitations.
 
@@ -54,7 +54,7 @@ The container is a defense-in-depth boundary, not a guarantee against every cont
 3. **Authorization integration:** principal/action/resource permission checks and sanitized audit events (implemented in the authorized executor).
 4. **Human approval service:** persistent SQLite approval records, distinct allowlisted approver, exact-request hash binding, bounded expiry and atomic single-use consumption (implemented). The exact source is retained temporarily for review only while pending, then cleared on approval, expiry or execution; approval hashes remain for verification.
 5. **API integration:** separate requester and human-approver credentials, authenticated approval request/review endpoints, and an explicit execution endpoint (implemented; end-to-end Docker execution verification pending). The reviewer page displays the full source, SHA-256 fingerprint, requester, expiry and resource limits; the approve control stays disabled until the reviewer acknowledges inspection.
-6. **Agent workflow integration:** expose a narrowly scoped execution tool that requires an approval ID and never executes generated code automatically (not yet implemented).
+6. **Agent workflow integration:** register `request_code_execution` and `execute_approved_code` behind exact-match tool permissions; bind requester identity server-side; expose explicit workflow dispatch and an authenticated API route. Requesting only creates a pending human review, while execution requires the same request and a one-time human approval (implemented; CI verification in progress).
 7. **Verification and docs:** unit tests, optional Docker integration tests, security regression tests and operator documentation (in progress).
 
 Each step should be delivered as a small, focused commit. Do not merge this phase into `dev` or `main` until the phase-specific checks pass and the user explicitly approves the merge.
@@ -67,7 +67,7 @@ Each step should be delivered as a small, focused commit. Do not merge this phas
 - API callers cannot choose arbitrary images, executable paths, mounts, environment variables, or runtime flags.
 - Timeout and cancellation terminate execution and trigger container cleanup; output is capped by Docker's local log rotation and the request's byte limit.
 - Containers and temporary data are cleaned up on success, failure, cancellation and timeout.
-- Permission authorization is checked before execution; denied attempts are audited without leaking secrets. A valid, unexpired, one-time human approval for the exact requester and request is required by the API executor; the agent workflow does not yet invoke this API.
+- Permission authorization is checked before tool dispatch and again before sandbox execution; denied attempts are audited without leaking source. The `request_code_execution` tool only creates a pending review. `execute_approved_code` requires the exact requester, request hash, and a valid, unexpired, one-time human approval.
 - Reviewer UI and review APIs require the separate human approval credential. The credential is held only in page memory; code is rendered as text, not HTML. The SQLite operations database contains temporary pending source for review, is chmod 0600 where supported, and should reside in a private application data directory with appropriate Windows ACLs.
 - Unit tests run without Docker; Docker integration tests are deterministic and explicitly gated on runtime/image availability.
 - Ruff, full pytest and the evaluation regression gate pass.
