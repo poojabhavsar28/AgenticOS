@@ -1,5 +1,7 @@
 """FastAPI application factory and HTTP routes."""
 
+# ruff: noqa: E501, I001  # Embedded HTML/CSS/JS is intentionally kept as one template.
+
 import asyncio
 import json
 from uuid import uuid4
