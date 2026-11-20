@@ -91,3 +91,24 @@ async def test_timed_out_execution_has_distinct_audit_outcome() -> None:
     await executor.execute("agent-1", SandboxExecutionRequest(source="while True: pass"))
 
     assert [event.outcome for event in audit.events()] == ["started", "timed_out"]
+
+
+@pytest.mark.asyncio
+async def test_authorized_execution_supports_persistent_sqlite_audit(tmp_path) -> None:
+    from agenticos.security.audit import SQLiteAuditLog
+
+    backend = StubBackend()
+    audit = SQLiteAuditLog(tmp_path / "security-audit.sqlite3")
+    permissions = PermissionPolicy({
+        Permission("agent-1", SANDBOX_EXECUTE_ACTION, SANDBOX_PYTHON_RESOURCE)
+    })
+    executor = AuthorizedSandboxExecutor(backend, permissions, audit)
+
+    await executor.execute(
+        "agent-1", SandboxExecutionRequest(source="print('not stored in audit')")
+    )
+
+    reopened = SQLiteAuditLog(tmp_path / "security-audit.sqlite3")
+    events = reopened.events()
+    assert [event.outcome for event in events] == ["started", "completed"]
+    assert all("not stored in audit" not in event.resource for event in events)
