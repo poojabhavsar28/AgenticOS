@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from agenticos.config import Settings
+
 
 class SandboxLimits(BaseModel):
     """Hard upper bounds requested from the sandbox runtime."""
@@ -75,3 +77,11 @@ class SandboxExecutionResult(BaseModel):
     stderr: str = Field(max_length=256_000)
     timed_out: bool = False
     output_truncated: bool = False
+
+
+def sandbox_policy_from_settings(settings: Settings) -> SandboxPolicy:
+    """Build the immutable sandbox policy from administrator-owned settings."""
+    return SandboxPolicy(
+        enabled=settings.sandbox_enabled,
+        image_ref=settings.sandbox_image,
+    )
