@@ -45,7 +45,7 @@ class DockerSandboxBackend:
                 stdout, stderr = await asyncio.wait_for(
                     process.communicate(), timeout=timeout
                 )
-            except TimeoutError:
+            except (TimeoutError, asyncio.CancelledError):
                 process.kill()
                 await process.communicate()
                 raise
