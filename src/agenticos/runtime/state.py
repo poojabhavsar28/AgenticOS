@@ -1,5 +1,6 @@
 """State shared by nodes in the coding workflow."""
 
+from collections.abc import Callable
 from typing import TypedDict
 
 from agenticos.runtime.progress import ProgressCallback
