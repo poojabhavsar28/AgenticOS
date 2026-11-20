@@ -83,3 +83,20 @@ def test_approval_lifetime_is_bounded(tmp_path):
     manager = make_manager(tmp_path)
     with pytest.raises(ValueError, match="between 1 and 900"):
         manager.request("agent-1", SandboxExecutionRequest(source="pass"), ttl_seconds=901)
+
+
+def test_review_source_is_cleared_after_approval(tmp_path):
+    manager = make_manager(tmp_path)
+    request = SandboxExecutionRequest(source="print('sensitive review source')")
+    approval_id = manager.request("agent-1", request)
+
+    pending = manager.get_review(approval_id)
+    assert pending is not None
+    assert pending["request"]["source"] == "print('sensitive review source')"
+
+    manager.approve(approval_id, "human-admin")
+    approved = manager.get_review(approval_id)
+    assert approved is not None
+    assert approved["status"] == "approved"
+    assert approved["request"] is None
+    assert approved["request_hash"] == manager.store.fingerprint(request)
