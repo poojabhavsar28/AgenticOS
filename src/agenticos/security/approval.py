@@ -1,5 +1,7 @@
 """Persistent, one-time human approvals for sandbox execution requests."""
 
+# ruff: noqa: E501  # SQL query literals are clearer as contiguous statements.
+
 import hashlib
 import json
 import secrets
