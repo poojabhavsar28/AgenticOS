@@ -129,6 +129,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         except WorkspaceBoundaryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except ValueError as exc:
+            logger.exception("agent_run_validation_failed")
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except RunExecutionError as exc:
             logger.exception("agent_run_failed", run_id=exc.record.run_id)
