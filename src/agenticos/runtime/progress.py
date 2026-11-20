@@ -1,9 +1,9 @@
 """Typed, payload-safe progress contracts for agent workflow stages."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from collections.abc import Callable
 
 
 class AgentStage(StrEnum):
