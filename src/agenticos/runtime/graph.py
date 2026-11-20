@@ -11,8 +11,8 @@ from agenticos.runtime.progress import (
     AgentStage,
     ProgressCallback,
     StageEventType,
-    StageProgress,
     RunCancelledError,
+    StageProgress,
 )
 from agenticos.runtime.prompts import CODER, PLANNER, REVIEWER, TEST_PLANNER
 from agenticos.runtime.state import AgentState
