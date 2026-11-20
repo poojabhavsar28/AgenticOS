@@ -85,6 +85,9 @@ class DockerSandboxBackend:
             source_dir = Path(temporary)
             source_file = source_dir / "main.py"
             source_file.write_text(request.source, encoding="utf-8")
+            # The container runs as UID 65534; grant read/traverse only.
+            source_dir.chmod(0o755)
+            source_file.chmod(0o644)
             mount = f"type=bind,src={source_dir},dst=/workspace,readonly"
             limits = request.limits
             create_args = (
