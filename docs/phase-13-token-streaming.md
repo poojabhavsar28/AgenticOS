@@ -16,6 +16,19 @@ Expose incremental model output from the local Ollama provider to authenticated 
 - Add deterministic tests with a fake streaming transport; tests must not require Ollama or network access.
 - Document client consumption, buffering, reconnect behavior, and limitations.
 
+## Implemented
+
+- Added an asynchronous Ollama newline-delimited JSON streaming adapter while preserving the existing non-streaming `generate` method.
+- Added injectable HTTP transport support for deterministic tests without a live Ollama service.
+- Added typed run/stage-scoped token chunks with a 1,024-character event bound.
+- The workflow streams model chunks stage by stage, assembles each stage's final text, and falls back to ordinary generation for clients without streaming support.
+- Token events are stored in the existing bounded SQLite event history and flow through the existing authenticated run SSE endpoint.
+- Provider error details are not copied into operational token events.
+
+## Client behavior
+
+Connect to `GET /v1/runs/{run_id}/events/stream` after creating a run. Token events use the SSE event name `token`; the JSON data includes the stage and content. Use the event ID as `Last-Event-ID` when reconnecting. Token chunks are stored in the bounded event table, so replay is available only while the corresponding events remain retained. The stream endpoint is a bounded polling stream and clients should reconnect if they need to continue observing a longer-running workflow.
+
 ## Safety and reliability constraints
 
 - Stream only output belonging to the authenticated run and current stage.
