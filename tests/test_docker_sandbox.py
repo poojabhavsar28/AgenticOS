@@ -51,7 +51,9 @@ async def test_docker_backend_applies_hardening_and_cleans_container() -> None:
         "--security-opt",
         "--pids-limit",
         "--memory",
+        "--memory-swap",
         "--cpus",
+        "--entrypoint",
         "--tmpfs",
         "--mount",
         "--log-driver",
@@ -100,5 +102,22 @@ async def test_docker_backend_rejects_source_over_configured_limit() -> None:
         limits={"max_source_bytes": 100},
     )
     with pytest.raises(ValueError, match="input limit"):
+        await backend.execute(request)
+    assert backend.commands == []
+
+
+
+@pytest.mark.asyncio
+async def test_docker_backend_rejects_limits_above_admin_policy() -> None:
+    from agenticos.security.sandbox import SandboxLimits
+
+    policy = SandboxPolicy(
+        enabled=True,
+        image_ref="registry.example/python@sha256:" + "b" * 64,
+        limits=SandboxLimits(memory_megabytes=64),
+    )
+    backend = FakeDockerBackend(policy)
+    request = SandboxExecutionRequest(source="print('no')")
+    with pytest.raises(ValueError, match="administrator policy"):
         await backend.execute(request)
     assert backend.commands == []
