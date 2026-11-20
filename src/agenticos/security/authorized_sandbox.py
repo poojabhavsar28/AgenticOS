@@ -1,12 +1,22 @@
 """Authorization and audit boundary for sandbox execution."""
 
-from agenticos.security.audit import AuditLog
+from typing import Protocol
+
 from agenticos.security.docker_sandbox import DockerSandboxBackend
 from agenticos.security.policy import PermissionDenied, PermissionPolicy
 from agenticos.security.sandbox import SandboxExecutionRequest, SandboxExecutionResult
 
 SANDBOX_EXECUTE_ACTION = "sandbox.execute"
 SANDBOX_PYTHON_RESOURCE = "sandbox:python"
+
+
+class AuditRecorder(Protocol):
+    """Minimal audit interface; supports in-memory and persistent stores."""
+
+    def record(
+        self, principal_id: str, action: str, resource: str, outcome: str
+    ) -> object:
+        """Persist or buffer one metadata-only security event."""
 
 
 class AuthorizedSandboxExecutor:
@@ -20,7 +30,7 @@ class AuthorizedSandboxExecutor:
         self,
         backend: DockerSandboxBackend,
         permissions: PermissionPolicy,
-        audit_log: AuditLog,
+        audit_log: AuditRecorder,
     ) -> None:
         self.backend = backend
         self.permissions = permissions
