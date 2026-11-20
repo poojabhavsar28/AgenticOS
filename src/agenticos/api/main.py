@@ -24,8 +24,13 @@ from agenticos.runtime.checkpoints import SQLiteCheckpointStore
 from agenticos.runtime.events import SQLiteRunEventStore
 from agenticos.runtime.execution import ExecutionManager, RunExecutionError
 from agenticos.runtime.graph import CodingWorkflow
+from agenticos.security.approval import ApprovalError, HumanApprovalManager, SQLiteExecutionApprovalStore
 from agenticos.security.audit import SQLiteAuditLog
 from agenticos.security.auth import BearerTokenAuthenticator
+from agenticos.security.authorized_sandbox import AuthorizedSandboxExecutor
+from agenticos.security.docker_sandbox import DockerSandboxBackend, DockerSandboxError
+from agenticos.security.policy import Permission, PermissionDenied, PermissionPolicy
+from agenticos.security.sandbox import SandboxExecutionRequest, sandbox_policy_from_settings
 from agenticos.security.workspace import WorkspaceBoundaryError, resolve_workspace_path
 from agenticos.workspace import WorkspaceFileService
 
@@ -34,6 +39,8 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     config = settings or get_settings()
     if config.app_env.lower() == "production" and not config.api_auth_token:
         raise ValueError("API_AUTH_TOKEN is required when APP_ENV=production")
+    if config.sandbox_enabled and not all((config.api_auth_token, config.sandbox_approval_token, config.sandbox_execution_principal)):
+        raise ValueError("Sandbox requires API_AUTH_TOKEN, SANDBOX_APPROVAL_TOKEN, and SANDBOX_EXECUTION_PRINCIPAL")
     authenticator = (
         BearerTokenAuthenticator(config.api_auth_token) if config.api_auth_token else None
     )
@@ -55,6 +62,20 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     repository_index = RepositoryIndex(config.workspace_root, config.memory_database_path)
     workspace_files = WorkspaceFileService(config.workspace_root)
     audit_log = SQLiteAuditLog(config.operations_database_path)
+    sandbox_approvals = None
+    sandbox_executor = None
+    approval_authenticator = None
+    if config.sandbox_enabled:
+        approval_authenticator = BearerTokenAuthenticator(config.sandbox_approval_token)
+        sandbox_approvals = HumanApprovalManager(
+            SQLiteExecutionApprovalStore(config.operations_database_path),
+            allowed_approvers={config.sandbox_approver_id},
+        )
+        permission_policy = PermissionPolicy({Permission(config.sandbox_execution_principal, "sandbox.execute", "sandbox:python")})
+        sandbox_executor = AuthorizedSandboxExecutor(
+            DockerSandboxBackend(sandbox_policy_from_settings(config)),
+            permission_policy, audit_log, sandbox_approvals,
+        )
 
     app = FastAPI(title=config.app_name, version="0.4.0")
     app.state.settings = config
@@ -67,6 +88,9 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     app.state.workspace_files = workspace_files
     app.state.authenticator = authenticator
     app.state.audit_log = audit_log
+    app.state.sandbox_approvals = sandbox_approvals
+    app.state.sandbox_executor = sandbox_executor
+    app.state.sandbox_approval_authenticator = approval_authenticator
 
     @app.middleware("http")
     async def authenticate_api_requests(request: Request, call_next):
@@ -90,6 +114,60 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
                 principal_id, request.method, request.url.path, str(response.status_code)
             )
         return response
+
+    @app.post("/v1/sandbox/approvals", status_code=201)
+    async def request_sandbox_approval(payload: dict[str, object], request: Request):
+        manager = request.app.state.sandbox_approvals
+        if manager is None:
+            raise HTTPException(status_code=503, detail="Sandbox approval is not configured")
+        try:
+            execution_request = SandboxExecutionRequest.model_validate(payload.get("request"))
+            principal = getattr(request.state, "principal", None)
+            if principal is None:
+                raise HTTPException(status_code=401, detail="Authenticated requester required")
+            approval_id = manager.request(principal.principal_id, execution_request)
+        except HTTPException:
+            raise
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"approval_id": approval_id, "status": "pending", "expires_in_seconds": 300}
+
+    @app.post("/v1/sandbox/approvals/{approval_id}/approve")
+    async def approve_sandbox_execution(approval_id: str, request: Request):
+        manager = request.app.state.sandbox_approvals
+        approval_auth = request.app.state.sandbox_approval_authenticator
+        if manager is None or approval_auth is None:
+            raise HTTPException(status_code=503, detail="Sandbox approval is not configured")
+        principal = approval_auth.authenticate(request.headers.get("x-sandbox-approval-token"))
+        if principal is None:
+            raise HTTPException(status_code=401, detail="Valid human approval credential required")
+        try:
+            manager.approve(approval_id, config.sandbox_approver_id)
+        except ApprovalError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        return {"approval_id": approval_id, "status": "approved"}
+
+    @app.post("/v1/sandbox/execute")
+    async def execute_approved_sandbox_request(payload: dict[str, object], request: Request):
+        executor = request.app.state.sandbox_executor
+        if executor is None:
+            raise HTTPException(status_code=503, detail="Sandbox execution is not configured")
+        principal = getattr(request.state, "principal", None)
+        if principal is None:
+            raise HTTPException(status_code=401, detail="Authenticated requester required")
+        approval_id = payload.get("approval_id")
+        if not isinstance(approval_id, str) or not approval_id:
+            raise HTTPException(status_code=422, detail="approval_id is required")
+        try:
+            execution_request = SandboxExecutionRequest.model_validate(payload.get("request"))
+            result = await executor.execute(principal.principal_id, execution_request, approval_id=approval_id)
+        except (ApprovalError, PermissionDenied) as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except DockerSandboxError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return result.model_dump(mode="json")
 
     @app.get("/health")
     async def health() -> dict[str, str]:
