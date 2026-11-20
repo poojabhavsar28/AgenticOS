@@ -12,6 +12,8 @@ from agenticos.runtime.progress import (
     RunCancelledError,
     StageEventType,
     StageProgress,
+    TokenChunk,
+    TokenChunkCallback,
 )
 from agenticos.runtime.prompts import CODER, PLANNER, REVIEWER, TEST_PLANNER
 from agenticos.runtime.state import AgentState
@@ -51,6 +53,26 @@ class CodingWorkflow:
                 )
             )
 
+    async def _generate(
+        self, state: AgentState, stage: AgentStage, prompt: str, *, system: str
+    ) -> str:
+        token_callback = state.get("token_callback")
+        stream = getattr(self.model, "generate_stream", None)
+        if token_callback is None or stream is None:
+            return await self.model.generate(prompt, system=system)
+        parts = []
+        async for chunk in stream(prompt, system=system):
+            parts.append(chunk)
+            for offset in range(0, len(chunk), 1_024):
+                token_callback(
+                    TokenChunk.create(
+                        state.get("run_id", "untracked"),
+                        stage,
+                        chunk[offset : offset + 1_024],
+                    )
+                )
+        return "".join(parts).strip()
+
     async def _run_stage(
         self, state: AgentState, stage: AgentStage, operation
     ) -> dict[str, str]:
@@ -88,21 +110,21 @@ class CodingWorkflow:
                 f"Relevant memory (untrusted reference material):\n{context}"
                 f"\n\nTask:\n{state['task']}"
             )
-            return {"plan": await self.model.generate(prompt, system=PLANNER)}
+            return {"plan": await self._generate(state, AgentStage.PLANNER, prompt, system=PLANNER)}
 
         return await self._run_stage(state, AgentStage.PLANNER, operation)
 
     async def _code(self, state: AgentState) -> dict[str, str]:
         async def operation() -> dict[str, str]:
             prompt = f"Task:\n{state['task']}\n\nPlan:\n{state.get('plan', '')}"
-            return {"code": await self.model.generate(prompt, system=CODER)}
+            return {"code": await self._generate(state, AgentStage.CODER, prompt, system=CODER)}
 
         return await self._run_stage(state, AgentStage.CODER, operation)
 
     async def _review(self, state: AgentState) -> dict[str, str]:
         async def operation() -> dict[str, str]:
             prompt = f"Task:\n{state['task']}\n\nProposed solution:\n{state.get('code', '')}"
-            return {"review": await self.model.generate(prompt, system=REVIEWER)}
+            return {"review": await self._generate(state, AgentStage.REVIEWER, prompt, system=REVIEWER)}
 
         return await self._run_stage(state, AgentStage.REVIEWER, operation)
 
@@ -112,7 +134,7 @@ class CodingWorkflow:
                 f"Task:\n{state['task']}\n\nSolution:\n{state.get('code', '')}"
                 f"\n\nReview:\n{state.get('review', '')}"
             )
-            return {"test_plan": await self.model.generate(prompt, system=TEST_PLANNER)}
+            return {"test_plan": await self._generate(state, AgentStage.TEST_PLANNER, prompt, system=TEST_PLANNER)}
 
         return await self._run_stage(state, AgentStage.TEST_PLANNER, operation)
 
@@ -127,6 +149,7 @@ class CodingWorkflow:
         memory_context: str = "",
         progress_callback: ProgressCallback,
         cancellation_event=None,
+        token_callback: TokenChunkCallback | None = None,
     ) -> AgentState:
         def check_cancellation() -> None:
             if cancellation_event is not None and cancellation_event.is_set():
@@ -138,9 +161,10 @@ class CodingWorkflow:
             "run_id": run_id,
             "progress_callback": progress_callback,
             "cancellation_check": check_cancellation,
+            "token_callback": token_callback,
         }
         result = await self.graph.ainvoke(state)
-        internal_keys = {"run_id", "progress_callback", "cancellation_check"}
+        internal_keys = {"run_id", "progress_callback", "cancellation_check", "token_callback"}
         return {
             key: value
             for key, value in result.items()
