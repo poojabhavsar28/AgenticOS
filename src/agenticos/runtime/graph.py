@@ -110,21 +110,30 @@ class CodingWorkflow:
                 f"Relevant memory (untrusted reference material):\n{context}"
                 f"\n\nTask:\n{state['task']}"
             )
-            return {"plan": await self._generate(state, AgentStage.PLANNER, prompt, system=PLANNER)}
+            plan = await self._generate(
+                state, AgentStage.PLANNER, prompt, system=PLANNER
+            )
+            return {"plan": plan}
 
         return await self._run_stage(state, AgentStage.PLANNER, operation)
 
     async def _code(self, state: AgentState) -> dict[str, str]:
         async def operation() -> dict[str, str]:
             prompt = f"Task:\n{state['task']}\n\nPlan:\n{state.get('plan', '')}"
-            return {"code": await self._generate(state, AgentStage.CODER, prompt, system=CODER)}
+            code = await self._generate(
+                state, AgentStage.CODER, prompt, system=CODER
+            )
+            return {"code": code}
 
         return await self._run_stage(state, AgentStage.CODER, operation)
 
     async def _review(self, state: AgentState) -> dict[str, str]:
         async def operation() -> dict[str, str]:
             prompt = f"Task:\n{state['task']}\n\nProposed solution:\n{state.get('code', '')}"
-            review = await self._generate(\n                state, AgentStage.REVIEWER, prompt, system=REVIEWER\n            )\n            return {"review": review}
+            review = await self._generate(
+                state, AgentStage.REVIEWER, prompt, system=REVIEWER
+            )
+            return {"review": review}
 
         return await self._run_stage(state, AgentStage.REVIEWER, operation)
 
@@ -134,7 +143,10 @@ class CodingWorkflow:
                 f"Task:\n{state['task']}\n\nSolution:\n{state.get('code', '')}"
                 f"\n\nReview:\n{state.get('review', '')}"
             )
-            test_plan = await self._generate(\n                state, AgentStage.TEST_PLANNER, prompt, system=TEST_PLANNER\n            )\n            return {"test_plan": test_plan}
+            test_plan = await self._generate(
+                state, AgentStage.TEST_PLANNER, prompt, system=TEST_PLANNER
+            )
+            return {"test_plan": test_plan}
 
         return await self._run_stage(state, AgentStage.TEST_PLANNER, operation)
 
