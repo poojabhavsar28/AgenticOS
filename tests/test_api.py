@@ -136,17 +136,26 @@ def test_run_event_history_and_sse_stream(fake_model, tmp_path) -> None:
 
     response = client.get(f"/v1/runs/{run_id}/events")
     assert response.status_code == 200
-    assert [event["event_type"] for event in response.json()] == [
-        "queued",
-        "started",
-        "completed",
+    event_types = [event["event_type"] for event in response.json()]
+    assert event_types[:2] == ["queued", "started"]
+    assert event_types[-1] == "completed"
+    stage_events = event_types[2:-1]
+    assert stage_events == [
+        "stage_started",
+        "stage_completed",
+        "stage_started",
+        "stage_completed",
+        "stage_started",
+        "stage_completed",
+        "stage_started",
+        "stage_completed",
     ]
 
     resumed = client.get(
         f"/v1/runs/{run_id}/events",
         params={"after_event_id": response.json()[0]["event_id"]},
     )
-    assert [event["event_type"] for event in resumed.json()] == ["started", "completed"]
+    assert [event["event_type"] for event in resumed.json()] == event_types[1:]
 
     stream = client.get(f"/v1/runs/{run_id}/events/stream")
     resumed_stream = client.get(
