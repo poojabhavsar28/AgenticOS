@@ -1,7 +1,8 @@
-"""Authorization and audit boundary for sandbox execution."""
+"""Authorization, human approval, and audit boundary for sandbox execution."""
 
 from typing import Protocol
 
+from agenticos.security.approval import ApprovalError, HumanApprovalManager
 from agenticos.security.docker_sandbox import DockerSandboxBackend
 from agenticos.security.policy import PermissionDenied, PermissionPolicy
 from agenticos.security.sandbox import SandboxExecutionRequest, SandboxExecutionResult
@@ -20,24 +21,26 @@ class AuditRecorder(Protocol):
 
 
 class AuthorizedSandboxExecutor:
-    """Require an explicit grant and audit each sandbox execution attempt.
-
-    Audit records contain only principal, fixed action/resource, and outcome;
-    source code and process output are deliberately excluded.
-    """
+    """Require permission and a one-time human approval before code execution."""
 
     def __init__(
         self,
         backend: DockerSandboxBackend,
         permissions: PermissionPolicy,
         audit_log: AuditRecorder,
+        approvals: HumanApprovalManager,
     ) -> None:
         self.backend = backend
         self.permissions = permissions
         self.audit_log = audit_log
+        self.approvals = approvals
 
     async def execute(
-        self, principal_id: str, request: SandboxExecutionRequest
+        self,
+        principal_id: str,
+        request: SandboxExecutionRequest,
+        *,
+        approval_id: str,
     ) -> SandboxExecutionResult:
         try:
             self.permissions.authorize(
@@ -45,28 +48,30 @@ class AuthorizedSandboxExecutor:
             )
         except PermissionDenied:
             self.audit_log.record(
-                principal_id,
-                SANDBOX_EXECUTE_ACTION,
-                SANDBOX_PYTHON_RESOURCE,
-                "denied",
+                principal_id, SANDBOX_EXECUTE_ACTION, SANDBOX_PYTHON_RESOURCE, "denied"
             )
             raise
 
-        # If the audit store is unavailable, fail closed before running code.
+        try:
+            self.approvals.consume(approval_id, principal_id, request)
+        except ApprovalError:
+            self.audit_log.record(
+                principal_id,
+                SANDBOX_EXECUTE_ACTION,
+                SANDBOX_PYTHON_RESOURCE,
+                "approval_denied",
+            )
+            raise
+
+        # Fail closed if the audit store is unavailable before execution.
         self.audit_log.record(
-            principal_id,
-            SANDBOX_EXECUTE_ACTION,
-            SANDBOX_PYTHON_RESOURCE,
-            "started",
+            principal_id, SANDBOX_EXECUTE_ACTION, SANDBOX_PYTHON_RESOURCE, "started"
         )
         try:
             result = await self.backend.execute(request)
         except BaseException:
             self.audit_log.record(
-                principal_id,
-                SANDBOX_EXECUTE_ACTION,
-                SANDBOX_PYTHON_RESOURCE,
-                "failed",
+                principal_id, SANDBOX_EXECUTE_ACTION, SANDBOX_PYTHON_RESOURCE, "failed"
             )
             raise
 
