@@ -60,6 +60,16 @@ class DockerSandboxBackend:
     ) -> SandboxExecutionResult:
         if not self.policy.enabled or not self.policy.image_ref:
             raise DockerSandboxError("Sandbox execution is disabled")
+        requested = request.limits.model_dump()
+        allowed = self.policy.limits.model_dump()
+        exceeded = [
+            name for name, value in requested.items() if value > allowed[name]
+        ]
+        if exceeded:
+            raise ValueError(
+                "Requested sandbox limits exceed administrator policy: "
+                + ", ".join(sorted(exceeded))
+            )
         if len(request.source.encode("utf-8")) > request.limits.max_source_bytes:
             raise ValueError("Source exceeds configured sandbox input limit")
 
@@ -92,6 +102,8 @@ class DockerSandboxBackend:
                 str(limits.pid_limit),
                 "--memory",
                 f"{limits.memory_megabytes}m",
+                "--memory-swap",
+                f"{limits.memory_megabytes}m",
                 "--cpus",
                 str(limits.cpu_count),
                 "--tmpfs",
@@ -106,8 +118,9 @@ class DockerSandboxBackend:
                 "max-size=1m",
                 "--log-opt",
                 "max-file=1",
-                self.policy.image_ref,
+                "--entrypoint",
                 "python",
+                self.policy.image_ref,
                 "-I",
                 "-B",
                 "/workspace/main.py",
