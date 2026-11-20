@@ -42,6 +42,10 @@ class SQLiteExecutionApprovalStore:
         return connection
 
     @staticmethod
+    def _approval_digest(approval_id: str) -> str:
+        return hashlib.sha256(approval_id.encode("utf-8")).hexdigest()
+
+    @staticmethod
     def fingerprint(request: SandboxExecutionRequest) -> str:
         canonical = json.dumps(
             request.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
@@ -66,7 +70,7 @@ class SQLiteExecutionApprovalStore:
                 VALUES (?, ?, ?, ?, ?, 'pending')
                 """,
                 (
-                    approval_id,
+                    self._approval_digest(approval_id),
                     requester_id,
                     self.fingerprint(request),
                     now,
@@ -84,7 +88,7 @@ class SQLiteExecutionApprovalStore:
             row = connection.execute(
                 """SELECT requester_id, status, expires_at
                    FROM sandbox_execution_approvals WHERE approval_id = ?""",
-                (approval_id,),
+                (self._approval_digest(approval_id),),
             ).fetchone()
             if row is None or row["status"] != "pending" or row["expires_at"] <= now:
                 raise ApprovalError("Approval is missing, expired, or no longer pending")
@@ -94,7 +98,7 @@ class SQLiteExecutionApprovalStore:
                 """UPDATE sandbox_execution_approvals
                    SET status = 'approved', approver_id = ?
                    WHERE approval_id = ? AND status = 'pending' AND expires_at > ?""",
-                (approver_id, approval_id, now),
+                (approver_id, self._approval_digest(approval_id), now),
             )
             if updated.rowcount != 1:
                 raise ApprovalError("Approval could not be applied")
@@ -123,7 +127,7 @@ class SQLiteExecutionApprovalStore:
                 """UPDATE sandbox_execution_approvals
                    SET status = 'consumed', consumed_at = ?
                    WHERE approval_id = ? AND status = 'approved' AND expires_at > ?""",
-                (now, approval_id, now),
+                (now, self._approval_digest(approval_id), now),
             )
             if updated.rowcount != 1:
                 raise ApprovalError("Approval has already been consumed")
