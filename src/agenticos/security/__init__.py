@@ -1,5 +1,10 @@
 """Security policy and execution boundary APIs."""
 
+from agenticos.security.approval import (
+    ApprovalError,
+    HumanApprovalManager,
+    SQLiteExecutionApprovalStore,
+)
 from agenticos.security.audit import AuditEvent, AuditLog, SQLiteAuditLog
 from agenticos.security.authorized_sandbox import AuthorizedSandboxExecutor
 from agenticos.security.docker_sandbox import DockerSandboxBackend, DockerSandboxError
@@ -19,6 +24,9 @@ from agenticos.security.sandbox import (
 )
 
 __all__ = [
+    "ApprovalError",
+    "HumanApprovalManager",
+    "SQLiteExecutionApprovalStore",
     "AuditEvent",
     "AuthorizedSandboxExecutor",
     "AuditLog",
