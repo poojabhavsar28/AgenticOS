@@ -108,13 +108,16 @@ print(json.dumps(checks))
     host = backend.container_inspect["HostConfig"]
     assert host["NetworkMode"] == "none"
     assert host["ReadonlyRootfs"] is True
-    assert host["UsernsMode"] in ("", None)
+    assert backend.container_inspect["Config"]["User"] == "65534:65534"
     assert host["PidsLimit"] == 64
     assert host["Memory"] == 128 * 1024 * 1024
     assert "ALL" in host["CapDrop"]
     assert any("no-new-privileges" in item for item in host["SecurityOpt"])
-    assert any(mount["Destination"] == "/workspace" and not mount["RW"]
-               for mount in backend.container_inspect["Mounts"])
+    assert any(
+        mount["Destination"] == "/workspace" and not mount["RW"]
+        for mount in backend.container_inspect["Mounts"]
+    )
+    assert "/tmp" in host["Tmpfs"]
 
 
 @pytest.mark.asyncio
