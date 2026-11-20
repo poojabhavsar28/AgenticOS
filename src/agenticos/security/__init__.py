@@ -8,6 +8,12 @@ from agenticos.security.execution import (
     SandboxUnavailable,
 )
 from agenticos.security.policy import Permission, PermissionDenied, PermissionPolicy
+from agenticos.security.sandbox import (
+    SandboxExecutionRequest,
+    SandboxExecutionResult,
+    SandboxLimits,
+    SandboxPolicy,
+)
 
 __all__ = [
     "AuditEvent",
@@ -20,4 +26,8 @@ __all__ = [
     "PermissionPolicy",
     "SafeCodeExecutor",
     "SandboxUnavailable",
+    "SandboxExecutionRequest",
+    "SandboxExecutionResult",
+    "SandboxLimits",
+    "SandboxPolicy",
 ]
