@@ -101,7 +101,11 @@ class DockerSandboxBackend:
                 "--workdir",
                 "/tmp",
                 "--log-driver",
-                "none",
+                "local",
+                "--log-opt",
+                "max-size=1m",
+                "--log-opt",
+                "max-file=1",
                 self.policy.image_ref,
                 "python",
                 "-I",
@@ -133,15 +137,24 @@ class DockerSandboxBackend:
                         raise
                     timed_out = True
                     await self._docker("kill", container_id, timeout=5.0)
-                # The none logging driver prevents unbounded daemon log storage.
-                # Output is intentionally empty until a separately bounded output
-                # transport is implemented and verified.
+                # Docker's local log driver caps retained logs at 1 MiB.
+                # The CLI combines the process streams; expose them as bounded output.
+                log_status, log_out, _ = await self._docker(
+                    "logs", container_id, timeout=5.0
+                )
+                if log_status != 0:
+                    raise DockerSandboxError("Unable to retrieve bounded sandbox output")
+                output_limit = limits.max_output_bytes
+                truncated = len(log_out) > output_limit
+                bounded_output = log_out[:output_limit].decode(
+                    "utf-8", errors="replace"
+                )
                 return SandboxExecutionResult(
                     exit_code=exit_code,
-                    stdout="",
+                    stdout=bounded_output,
                     stderr="",
                     timed_out=timed_out,
-                    output_truncated=False,
+                    output_truncated=truncated,
                 )
             finally:
                 await self._docker("rm", "--force", container_id, timeout=10.0)
