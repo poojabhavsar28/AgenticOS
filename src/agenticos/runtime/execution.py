@@ -97,7 +97,6 @@ class ExecutionManager:
                 memory_context=memory_context,
                 run_id=run_id,
                 cancellation_event=cancellation_event,
-                token_callback=self._emit_token_chunk,
             )
         )
         self._run_tasks[run_id] = task_handle
@@ -132,6 +131,7 @@ class ExecutionManager:
                 memory_context=memory_context,
                 progress_callback=self._emit_stage_progress,
                 cancellation_event=cancellation_event,
+                token_callback=self._emit_token_chunk,
             )
         result = await self.workflow.run(record.task, memory_context=memory_context)
         if cancellation_event.is_set():
