@@ -1,5 +1,6 @@
 """Typed contracts and immutable policy for isolated code execution."""
 
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -28,6 +29,7 @@ class SandboxPolicy(BaseModel):
 
     enabled: bool = False
     image_ref: str | None = None
+    limits: SandboxLimits = Field(default_factory=SandboxLimits)
     network_enabled: Literal[False] = False
     read_only_rootfs: Literal[True] = True
     non_root: Literal[True] = True
@@ -37,8 +39,8 @@ class SandboxPolicy(BaseModel):
     @field_validator("image_ref")
     @classmethod
     def image_must_be_digest_pinned(cls, value: str | None) -> str | None:
-        if value is not None and "@sha256:" not in value:
-            raise ValueError("Sandbox image must be pinned by sha256 digest")
+        if value is not None and not re.search(r"@sha256:[0-9a-f]{64}$", value):
+            raise ValueError("Sandbox image must be pinned by a full sha256 digest")
         return value
 
     @model_validator(mode="after")
