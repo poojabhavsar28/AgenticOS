@@ -20,6 +20,8 @@ class FakeDockerBackend(DockerSandboxBackend):
             raise DockerSandboxError("Docker command timed out")
         if arguments[0] == "wait":
             return 0, b"0\n", b""
+        if arguments[0] == "logs":
+            return 0, b"captured output", b""
         return 0, b"", b""
 
 
