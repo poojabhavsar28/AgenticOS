@@ -54,6 +54,25 @@ class StageProgress:
 ProgressCallback = Callable[[StageProgress], None]
 
 
+@dataclass(frozen=True)
+class TokenChunk:
+    """A bounded piece of model output scoped to one run and workflow stage."""
+
+    run_id: str
+    stage: AgentStage
+    content: str
+
+    @classmethod
+    def create(cls, run_id: str, stage: AgentStage, content: str) -> "TokenChunk":
+        if not run_id.strip():
+            raise ValueError("run_id must be non-empty")
+        if not content or len(content) > 1_024:
+            raise ValueError("token chunk must contain 1 to 1024 characters")
+        return cls(run_id=run_id, stage=stage, content=content)
+
+
+TokenChunkCallback = Callable[[TokenChunk], None]
+
 
 class RunCancelledError(Exception):
     """Raised when a run observes a cooperative cancellation request."""
