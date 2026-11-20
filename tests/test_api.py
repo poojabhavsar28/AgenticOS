@@ -143,11 +143,17 @@ def test_run_event_history_and_sse_stream(fake_model, tmp_path) -> None:
 
     resumed = client.get(
         f"/v1/runs/{run_id}/events",
-        headers={"Last-Event-ID": str(response.json()[0]["event_id"])},
+        params={"after_event_id": response.json()[0]["event_id"]},
     )
     assert [event["event_type"] for event in resumed.json()] == ["started", "completed"]
 
     stream = client.get(f"/v1/runs/{run_id}/events/stream")
+    resumed_stream = client.get(
+        f"/v1/runs/{run_id}/events/stream",
+        headers={"Last-Event-ID": str(response.json()[0]["event_id"])},
+    )
+    assert "event: queued" not in resumed_stream.text
+    assert "event: started" in resumed_stream.text
     assert stream.status_code == 200
     assert stream.headers["content-type"].startswith("text/event-stream")
     assert "event: queued" in stream.text
