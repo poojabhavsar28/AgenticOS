@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from typing import TypedDict
 
-from agenticos.runtime.progress import ProgressCallback
+from agenticos.runtime.progress import ProgressCallback, TokenChunkCallback
 
 
 class AgentState(TypedDict, total=False):
