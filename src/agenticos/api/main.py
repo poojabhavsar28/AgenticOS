@@ -159,7 +159,14 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     memory = SQLiteMemoryStore(config.memory_database_path)
     repository_index = RepositoryIndex(config.workspace_root, config.memory_database_path)
     workspace_files = WorkspaceFileService(config.workspace_root)
-    audit_log = SQLiteAuditLog(\n        config.operations_database_path,\n        signing_key=load_or_create_audit_key(\n            config.operations_database_path.with_name(\n                config.operations_database_path.name + ".audit.key"\n            )\n        ),\n    )
+    audit_log = SQLiteAuditLog(
+        config.operations_database_path,
+        signing_key=load_or_create_audit_key(
+            config.operations_database_path.with_name(
+                config.operations_database_path.name + ".audit.key"
+            )
+        ),
+    )
     sandbox_approvals = None
     sandbox_executor = None
     approval_authenticator = None
