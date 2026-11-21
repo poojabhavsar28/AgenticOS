@@ -66,7 +66,7 @@ def test_agent_to_human_approval_to_sandbox_execution_lifecycle(
         # Only the separately authenticated reviewer can inspect the submitted source.
         queue = client.get("/v1/sandbox/reviews", headers=reviewer_headers)
         assert queue.status_code == 200
-        assert [item["review_id"] for item in queue.json()] == [approval_id]
+        assert [item["review_id"] for item in queue.json()] == [review_id]
         review = client.get(
             f"/v1/sandbox/reviews/{review_id}", headers=reviewer_headers
         )
