@@ -120,7 +120,7 @@ class DockerSandboxBackend:
                 "--log-opt",
                 "max-size=1m",
                 "--log-opt",
-                "max-file=1",
+                "max-file=2",
                 "--entrypoint",
                 "python",
                 self.policy.image_ref,
