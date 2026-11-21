@@ -1,5 +1,6 @@
 """HTTP authentication integration tests for persistent identities."""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from agenticos.api.main import create_app
@@ -142,13 +143,14 @@ def test_identity_admin_can_manage_principals_tokens_and_workspace_grants(
             headers=admin,
         )
         assert admin_disable.status_code == 409
-        admin_token_id = next(
-            row["token_id"]
-            for row in store._connect().execute(
+        connection = store._connect()
+        try:
+            admin_token_id = connection.execute(
                 "SELECT token_id FROM identity_tokens WHERE principal_id = ?",
                 ("local-admin",),
-            ).fetchall()
-        )
+            ).fetchone()["token_id"]
+        finally:
+            connection.close()
         admin_revoke = client.delete(
             f"/v1/admin/tokens/{admin_token_id}", headers=admin
         )
