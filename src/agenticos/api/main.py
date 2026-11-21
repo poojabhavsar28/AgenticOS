@@ -131,7 +131,6 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     if config.sandbox_enabled and config.api_auth_token == config.sandbox_approval_token:
         raise ValueError("Sandbox approval token must differ from API_AUTH_TOKEN")
     identity_store = SQLiteIdentityStore(config.operations_database_path)
-    authenticator = None
     if config.api_auth_token:
         identity_store.register_configured_token(
             config.sandbox_execution_principal or "local-operator",
