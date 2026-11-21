@@ -117,6 +117,10 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     config = settings or get_settings()
     if config.app_env.lower() == "production" and not config.api_auth_token:
         raise ValueError("API_AUTH_TOKEN is required when APP_ENV=production")
+    if config.identity_admin_token and config.identity_admin_token in {
+        config.api_auth_token, config.sandbox_approval_token
+    }:
+        raise ValueError("IDENTITY_ADMIN_TOKEN must differ from other credentials")
     if config.sandbox_enabled and not all(
         (
             config.api_auth_token,
@@ -131,6 +135,10 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     if config.sandbox_enabled and config.api_auth_token == config.sandbox_approval_token:
         raise ValueError("Sandbox approval token must differ from API_AUTH_TOKEN")
     identity_store = SQLiteIdentityStore(config.operations_database_path)
+    if config.identity_admin_token:
+        identity_store.register_configured_token(
+            config.identity_admin_principal, config.identity_admin_token
+        )
     if config.api_auth_token:
         identity_store.register_configured_token(
             config.sandbox_execution_principal or "local-operator",
@@ -245,7 +253,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         ) or request.url.path.startswith("/v1/sandbox/reviews")
         if (
             request.url.path.startswith("/v1/")
-            and config.api_auth_token is not None
+            and (config.api_auth_token is not None or config.identity_admin_token is not None)
             and not is_human_approval_route
         ):
             authorization = request.headers.get("authorization")
@@ -272,6 +280,95 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
                 principal_id, request.method, request.url.path, str(response.status_code)
             )
         return response
+
+    def require_identity_admin(request: Request) -> None:
+        principal = getattr(request.state, "principal", None)
+        if (
+            not config.identity_admin_token
+            or principal is None
+            or principal.principal_id != config.identity_admin_principal
+        ):
+            raise HTTPException(status_code=403, detail="Identity administrator required")
+
+    @app.post("/v1/admin/principals", status_code=201)
+    async def admin_create_principal(payload: dict[str, object], request: Request):
+        require_identity_admin(request)
+        principal_id = payload.get("principal_id")
+        if not isinstance(principal_id, str) or not principal_id.strip():
+            raise HTTPException(status_code=422, detail="principal_id is required")
+        try:
+            request.app.state.identity_store.create_principal(principal_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception as exc:
+            # Duplicate IDs are conflicts; do not leak database details.
+            import sqlite3
+            if isinstance(exc, sqlite3.IntegrityError):
+                raise HTTPException(status_code=409, detail="Principal already exists") from exc
+            raise
+        return {"principal_id": principal_id.strip(), "status": "created"}
+
+    @app.post("/v1/admin/principals/{principal_id}/tokens", status_code=201)
+    async def admin_issue_token(principal_id: str, request: Request):
+        require_identity_admin(request)
+        try:
+            token_id, token = request.app.state.identity_store.issue_token(principal_id)
+        except (KeyError, PermissionError) as exc:
+            raise HTTPException(status_code=404, detail="Principal not found or disabled") from exc
+        return {"token_id": token_id, "token": token}
+
+    @app.delete("/v1/admin/tokens/{token_id}")
+    async def admin_revoke_token(token_id: str, request: Request):
+        require_identity_admin(request)
+        try:
+            request.app.state.identity_store.revoke_token(token_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Active token not found") from exc
+        return {"token_id": token_id, "status": "revoked"}
+
+    @app.patch("/v1/admin/principals/{principal_id}")
+    async def admin_set_principal(principal_id: str, payload: dict[str, object], request: Request):
+        require_identity_admin(request)
+        enabled = payload.get("enabled")
+        if not isinstance(enabled, bool):
+            raise HTTPException(status_code=422, detail="enabled must be a boolean")
+        try:
+            request.app.state.identity_store.set_principal_enabled(principal_id, enabled)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Principal not found") from exc
+        return {"principal_id": principal_id, "enabled": enabled}
+
+    @app.put("/v1/admin/principals/{principal_id}/workspaces/{workspace_id}/grants")
+    async def admin_grant_workspace(
+        principal_id: str, workspace_id: str, payload: dict[str, object], request: Request
+    ):
+        require_identity_admin(request)
+        action, resource = payload.get("action"), payload.get("resource")
+        if not isinstance(action, str) or not isinstance(resource, str):
+            raise HTTPException(status_code=422, detail="action and resource are required")
+        try:
+            request.app.state.identity_store.grant(principal_id, workspace_id, action, resource)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Principal not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"principal_id": principal_id, "workspace_id": workspace_id, "action": action, "resource": resource, "status": "granted"}
+
+    @app.delete("/v1/admin/principals/{principal_id}/workspaces/{workspace_id}/grants")
+    async def admin_revoke_workspace(
+        principal_id: str, workspace_id: str, payload: dict[str, object], request: Request
+    ):
+        require_identity_admin(request)
+        action, resource = payload.get("action"), payload.get("resource")
+        if not isinstance(action, str) or not isinstance(resource, str):
+            raise HTTPException(status_code=422, detail="action and resource are required")
+        try:
+            request.app.state.identity_store.revoke_grant(principal_id, workspace_id, action, resource)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Grant not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"principal_id": principal_id, "workspace_id": workspace_id, "status": "revoked"}
 
     @app.get("/sandbox/review", response_class=HTMLResponse)
     async def sandbox_review_page():
