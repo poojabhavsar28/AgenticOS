@@ -49,7 +49,10 @@ def prepare_private_sqlite_database(database_path: Path | str) -> Path:
             raise PermissionError("SQLite database path must be a regular file")
         if os.name != "nt" and file_stat.st_uid != os.getuid():
             raise PermissionError("SQLite database must be owned by the service user")
-        os.fchmod(descriptor, 0o600)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, 0o600)
+        else:
+            os.chmod(path, 0o600)
     finally:
         os.close(descriptor)
 
