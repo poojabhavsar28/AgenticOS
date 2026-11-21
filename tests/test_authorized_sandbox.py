@@ -100,7 +100,7 @@ async def test_execution_without_human_approval_is_denied(tmp_path) -> None:
 
     with pytest.raises(ApprovalError, match="human approval"):
         await executor.execute(
-            "agent-1", SandboxExecutionRequest(source="pass"), approval_id="missing"
+            "agent-1", SandboxExecutionRequest(source="pass"), approval_token="missing"
         )
     assert backend.calls == 0
     assert [event.outcome for event in audit.events()] == ["approval_denied"]
