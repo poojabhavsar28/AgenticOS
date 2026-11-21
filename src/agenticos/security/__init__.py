@@ -5,7 +5,13 @@ from agenticos.security.approval import (
     HumanApprovalManager,
     SQLiteExecutionApprovalStore,
 )
-from agenticos.security.audit import (\n    AuditEvent,\n    AuditIntegrityError,\n    AuditLog,\n    SQLiteAuditLog,\n    load_or_create_audit_key,\n)
+from agenticos.security.audit import (
+    AuditEvent,
+    AuditIntegrityError,
+    AuditLog,
+    SQLiteAuditLog,
+    load_or_create_audit_key,
+)
 from agenticos.security.authorized_sandbox import AuthorizedSandboxExecutor
 from agenticos.security.docker_sandbox import DockerSandboxBackend, DockerSandboxError
 from agenticos.security.execution import (
