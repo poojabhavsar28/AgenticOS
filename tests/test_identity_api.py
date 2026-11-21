@@ -155,6 +155,10 @@ def test_identity_admin_can_manage_principals_tokens_and_workspace_grants(
             f"/v1/admin/tokens/{admin_token_id}", headers=admin
         )
         assert admin_revoke.status_code == 409
+        admin_rotate = client.post(
+            f"/v1/admin/tokens/{admin_token_id}/rotate", headers=admin
+        )
+        assert admin_rotate.status_code == 409
         assert store.authenticate(token_data["token"]) is not None
         rotated = client.post(
             f"/v1/admin/tokens/{token_data['token_id']}/rotate", headers=admin
