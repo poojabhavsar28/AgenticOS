@@ -9,6 +9,7 @@ from agenticos.security.audit import AuditLog
 from agenticos.security.authorized_sandbox import (
     SANDBOX_EXECUTE_ACTION,
     SANDBOX_PYTHON_RESOURCE,
+    AuditCompletionError,
     AuthorizedSandboxExecutor,
 )
 from agenticos.security.docker_sandbox import DockerSandboxBackend
@@ -165,3 +166,28 @@ async def test_audit_store_failure_fails_closed_before_execution(tmp_path) -> No
 
     assert backend.calls == 0
 
+
+
+@pytest.mark.asyncio
+async def test_completion_audit_failure_preserves_result_and_warns_against_retry(tmp_path) -> None:
+    class CompletionAuditUnavailable:
+        def __init__(self):
+            self.calls = 0
+
+        def record(self, principal_id, action, resource, outcome):
+            self.calls += 1
+            if outcome in {"completed", "timed_out"}:
+                raise OSError("audit database unavailable after execution")
+
+    backend = StubBackend()
+    audit = CompletionAuditUnavailable()
+    request = SandboxExecutionRequest(source="print('executed exactly once')")
+    approvals, approval_id = make_approval(tmp_path, request)
+    executor = make_executor(backend, audit, approvals)
+
+    with pytest.raises(AuditCompletionError, match="do not retry automatically") as exc_info:
+        await executor.execute("agent-1", request, approval_id=approval_id)
+
+    assert backend.calls == 1
+    assert exc_info.value.result.stdout == "safe output"
+    assert audit.calls == 2
