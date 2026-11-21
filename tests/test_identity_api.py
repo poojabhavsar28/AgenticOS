@@ -136,6 +136,23 @@ def test_identity_admin_can_manage_principals_tokens_and_workspace_grants(
             json={"enabled": True},
             headers=admin,
         )
+        admin_disable = client.patch(
+            "/v1/admin/principals/local-admin",
+            json={"enabled": False},
+            headers=admin,
+        )
+        assert admin_disable.status_code == 409
+        admin_token_id = next(
+            row["token_id"]
+            for row in store._connect().execute(
+                "SELECT token_id FROM identity_tokens WHERE principal_id = ?",
+                ("local-admin",),
+            ).fetchall()
+        )
+        admin_revoke = client.delete(
+            f"/v1/admin/tokens/{admin_token_id}", headers=admin
+        )
+        assert admin_revoke.status_code == 409
         assert store.authenticate(token_data["token"]) is not None
         revoked_token = client.delete(
             f"/v1/admin/tokens/{token_data['token_id']}", headers=admin
@@ -154,3 +171,11 @@ def test_identity_admin_routes_fail_closed_without_bootstrap_admin(fake_model, t
             headers={"Authorization": "Bearer configured-operator-secret"},
         )
         assert response.status_code == 403
+
+
+
+def test_admin_and_operator_principals_must_be_distinct(fake_model, tmp_path):
+    settings = _settings(tmp_path)
+    settings.identity_admin_principal = "operator"
+    with pytest.raises(ValueError, match="must differ"):
+        create_app(settings, model_client=fake_model)
