@@ -113,7 +113,8 @@ def test_identity_admin_can_manage_principals_tokens_and_workspace_grants(
             headers={"Authorization": f"Bearer {token_data['token']}"},
         ).status_code == 403
 
-        revoked = client.delete(
+        revoked = client.request(
+            "DELETE",
             grant_path,
             json={"action": "execute", "resource": "echo"},
             headers=admin,
