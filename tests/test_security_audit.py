@@ -3,7 +3,7 @@ import sqlite3
 import pytest
 
 from agenticos.security import AuditLog
-from agenticos.security.audit import AuditIntegrityError, SQLiteAuditLog
+from agenticos.security.audit import (\n    AuditIntegrityError,\n    SQLiteAuditLog,\n    load_or_create_audit_key,\n)
 
 
 KEY = b"test-audit-signing-key-material-32-bytes!!"
@@ -90,6 +90,17 @@ def test_sqlite_audit_chain_detects_tail_truncation_with_checkpoint(tmp_path) ->
     assert audit.verify_integrity()
     with pytest.raises(AuditIntegrityError, match="trusted checkpoint"):
         audit.verify_integrity(expected_head=checkpoint)
+
+
+
+def test_audit_signing_key_is_created_once_and_reused(tmp_path) -> None:
+    key_path = tmp_path / "audit.key"
+    first = load_or_create_audit_key(key_path)
+    second = load_or_create_audit_key(key_path)
+    assert len(first) == 32
+    assert second == first
+    if __import__("os").name != "nt":
+        assert key_path.stat().st_mode & 0o077 == 0
 
 
 def test_sqlite_audit_chain_rejects_short_signing_key(tmp_path) -> None:
