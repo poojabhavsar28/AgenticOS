@@ -115,3 +115,17 @@ def test_audit_signing_key_is_created_once_and_reused(tmp_path) -> None:
 def test_sqlite_audit_chain_rejects_short_signing_key(tmp_path) -> None:
     with pytest.raises(ValueError, match="32 bytes"):
         SQLiteAuditLog(tmp_path / "audit.sqlite3", signing_key=b"short")
+
+
+def test_sqlite_audit_chain_creates_and_reuses_default_key(tmp_path) -> None:
+    database = tmp_path / "audit.sqlite3"
+    first = SQLiteAuditLog(database)
+    first.record("principal-a", "execute", "tool-a", "allowed")
+    checkpoint = first.chain_head()
+
+    reopened = SQLiteAuditLog(database)
+    assert reopened.verify_integrity(expected_head=checkpoint)
+    assert reopened.chain_head() == checkpoint
+    assert (tmp_path / "audit.sqlite3.audit.key").is_file()
+
+
