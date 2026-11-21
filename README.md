@@ -77,6 +77,20 @@ curl -X POST http://127.0.0.1:8000/v1/runs -H "Content-Type: application/json" -
 
 SQLite history, run checkpoints, API audit events, and bounded run lifecycle events persist across restarts in local database files. SSE is a best-effort local stream; clients should reconnect using the last received event ID. Configure `OPERATIONS_DATABASE_PATH` to change the checkpoint/audit database location.
 
+## Identity administration
+
+When `IDENTITY_ADMIN_TOKEN` is configured, authenticate with its bearer value to use these routes:
+
+- `POST /v1/admin/principals` — create a principal.
+- `POST /v1/admin/principals/{principal_id}/tokens` — issue a one-time bearer secret.
+- `POST /v1/admin/tokens/{token_id}/rotate` — atomically revoke a credential and issue its replacement.
+- `DELETE /v1/admin/tokens/{token_id}` — revoke a credential.
+- `PATCH /v1/admin/principals/{principal_id}` — enable or disable a principal.
+- `PUT /v1/admin/principals/{principal_id}/workspaces/{workspace_id}/grants` — grant an exact action/resource pair.
+- `DELETE /v1/admin/principals/{principal_id}/workspaces/{workspace_id}/grants` — revoke that grant.
+
+Token secrets are returned only when issued or rotated. Store them securely. Bootstrap administrator credentials must be rotated through deployment configuration, not these API routes. Never reuse the operator and administrator credentials.
+
 ## Tests
 
 ```bash
