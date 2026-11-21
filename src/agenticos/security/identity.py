@@ -156,7 +156,10 @@ class SQLiteIdentityStore:
                     "Cannot rotate an unknown, revoked, or disabled credential"
                 )
             connection.execute(
-                "UPDATE identity_tokens SET revoked_at = ? WHERE token_id = ? AND revoked_at IS NULL",
+                """
+                UPDATE identity_tokens
+                SET revoked_at = ? WHERE token_id = ? AND revoked_at IS NULL
+                """,
                 (int(time.time()), token_id),
             )
             connection.execute(
