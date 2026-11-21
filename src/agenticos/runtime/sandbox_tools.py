@@ -18,9 +18,10 @@ class RequestCodeExecutionApprovalTool:
 
     async def execute(self, arguments: dict[str, object]) -> dict[str, object]:
         request = SandboxExecutionRequest.model_validate(arguments.get("request"))
-        approval_id = self.approvals.request(self.requester_id, request)
+        approval = self.approvals.request(self.requester_id, request)
         return {
-            "approval_id": approval_id,
+            "review_id": approval["review_id"],
+            "approval_token": approval["approval_token"],
             "status": "pending_human_review",
             "message": "Execution is not permitted until a human approves this exact request.",
         }
@@ -39,10 +40,10 @@ class ExecuteApprovedCodeTool:
 
     async def execute(self, arguments: dict[str, object]) -> dict[str, object]:
         request = SandboxExecutionRequest.model_validate(arguments.get("request"))
-        approval_id = arguments.get("approval_id")
-        if not isinstance(approval_id, str) or not approval_id.strip():
-            raise ValueError("approval_id is required")
+        approval_token = arguments.get("approval_token")
+        if not isinstance(approval_token, str) or not approval_token.strip():
+            raise ValueError("approval_token is required")
         result = await self.executor.execute(
-            self.principal_id, request, approval_id=approval_id
+            self.principal_id, request, approval_id=approval_token
         )
         return result.model_dump(mode="json")
