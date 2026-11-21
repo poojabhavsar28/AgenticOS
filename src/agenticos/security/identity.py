@@ -149,6 +149,16 @@ class SQLiteIdentityStore:
                 match = str(row["principal_id"])
         return AuthenticatedPrincipal(principal_id=match) if match else None
 
+    def principal_for_token(self, token_id: str) -> str | None:
+        """Return the owning principal for an opaque token ID, if it exists."""
+        token_id = self._required(token_id, "token_id")
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT principal_id FROM identity_tokens WHERE token_id = ?",
+                (token_id,),
+            ).fetchone()
+        return str(row["principal_id"]) if row is not None else None
+
     def revoke_token(self, token_id: str) -> None:
         token_id = self._required(token_id, "token_id")
         with self._connect() as connection:
