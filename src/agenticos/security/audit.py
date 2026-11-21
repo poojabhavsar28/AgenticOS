@@ -55,6 +55,46 @@ class AuditLog:
         return tuple(self._events)
 
 
+def load_or_create_audit_key(key_path: Path | str) -> bytes:
+    """Load a private HMAC key or atomically create it with owner-only access."""
+    import os
+    import secrets
+    import stat
+
+    path = Path(key_path)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if path.is_symlink():
+        raise PermissionError("Audit signing key must not be a symbolic link")
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags, 0o600)
+    except FileExistsError:
+        descriptor = None
+    if descriptor is not None:
+        key = secrets.token_bytes(32)
+        try:
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(key)
+                stream.flush()
+                os.fsync(stream.fileno())
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+        return key
+    file_stat = path.stat(follow_symlinks=False)
+    if not stat.S_ISREG(file_stat.st_mode):
+        raise PermissionError("Audit signing key must be a regular file")
+    if os.name != "nt":
+        if file_stat.st_uid != os.getuid() or stat.S_IMODE(file_stat.st_mode) & 0o077:
+            raise PermissionError("Audit signing key must be owner-only and service-owned")
+    key = path.read_bytes()
+    if len(key) < 32:
+        raise ValueError("Audit signing key file is invalid")
+    return key
+
+
 class SQLiteAuditLog:
     """Append-only HMAC-chained audit store.
 
