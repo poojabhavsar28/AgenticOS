@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     memory_database_path: Path = Path("./.agenticos/memory.sqlite3")
     operations_database_path: Path = Path("./.agenticos/operations.sqlite3")
     api_auth_token: str | None = None
+    identity_admin_token: str | None = None
+    identity_admin_principal: str = "local-admin"
     sandbox_enabled: bool = False
     sandbox_image: str | None = None
     sandbox_approval_token: str | None = None
