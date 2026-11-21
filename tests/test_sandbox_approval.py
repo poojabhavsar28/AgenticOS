@@ -1,4 +1,5 @@
 import pytest
+from pathlib import Path
 
 from agenticos.security.approval import (
     ApprovalError,
@@ -126,3 +127,46 @@ def test_raw_approval_token_is_never_persisted(tmp_path):
     assert row[0] == manager.store._approval_digest(token)
     assert row[1] == review_id
     assert len(review_id) == 32
+
+
+def test_approval_store_restricts_dedicated_directory_and_database(tmp_path):
+    import os
+    import stat
+
+    from agenticos.security.sqlite_storage import harden_sqlite_files
+
+    if os.name == "nt":
+        pytest.skip("POSIX mode bits are not an authoritative Windows ACL check")
+
+    data_dir = tmp_path / ".agenticos"
+    data_dir.mkdir(mode=0o755)
+    database = data_dir / "approvals.sqlite3"
+    SQLiteExecutionApprovalStore(database)
+
+    assert stat.S_IMODE(data_dir.stat().st_mode) == 0o700
+    assert stat.S_IMODE(database.stat().st_mode) == 0o600
+
+    for suffix in ("-journal", "-wal", "-shm"):
+        sidecar = Path(f"{database}{suffix}")
+        sidecar.write_text("test", encoding="utf-8")
+        sidecar.chmod(0o644)
+
+    harden_sqlite_files(database)
+
+    for suffix in ("-journal", "-wal", "-shm"):
+        sidecar = Path(f"{database}{suffix}")
+        assert stat.S_IMODE(sidecar.stat().st_mode) == 0o600
+
+
+def test_approval_store_rejects_insecure_shared_directory(tmp_path):
+    import os
+
+    if os.name == "nt":
+        pytest.skip("POSIX directory mode check is not applicable on Windows")
+
+    shared_dir = tmp_path / "shared"
+    shared_dir.mkdir(mode=0o755)
+    shared_dir.chmod(0o755)
+
+    with pytest.raises(PermissionError, match="dedicated private directory"):
+        SQLiteExecutionApprovalStore(shared_dir / "approvals.sqlite3")
