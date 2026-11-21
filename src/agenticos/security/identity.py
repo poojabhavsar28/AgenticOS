@@ -103,6 +103,33 @@ class SQLiteIdentityStore:
             )
         return token_id, token
 
+    def register_configured_token(self, principal_id: str, token: str) -> None:
+        """Migrate an operator-configured token into the persistent verifier store."""
+        principal_id = self._required(principal_id, "principal_id")
+        if not isinstance(token, str) or not token.strip():
+            raise ValueError("Configured token must be non-empty")
+        verifier = hashlib.sha256(token.encode("utf-8")).digest()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO principals(principal_id, enabled, created_at)
+                VALUES (?, 1, ?)
+                ON CONFLICT(principal_id) DO NOTHING
+                """,
+                (principal_id, int(time.time())),
+            )
+            connection.execute(
+                """
+                INSERT INTO identity_tokens(token_id, principal_id, verifier, created_at)
+                SELECT ?, ?, ?, ?
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM identity_tokens
+                    WHERE principal_id = ? AND verifier = ? AND revoked_at IS NULL
+                )
+                """,
+                (uuid4().hex, principal_id, verifier, int(time.time()), principal_id, verifier),
+            )
+
     def authenticate(self, token: str | None) -> AuthenticatedPrincipal | None:
         if not isinstance(token, str) or not token.startswith("agx_"):
             return None
