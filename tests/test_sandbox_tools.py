@@ -47,7 +47,7 @@ async def test_request_tool_only_creates_human_review_request(tmp_path) -> None:
 
     response = await tool.execute({"request": request.model_dump(mode="json")})
 
-    review = approvals.get_review(response["approval_id"])
+    review = approvals.get_review(response["review_id"])
     assert response["status"] == "pending_human_review"
     assert review is not None
     assert review["requester_id"] == "trusted-agent"
@@ -68,12 +68,12 @@ async def test_execution_tool_requires_matching_human_approval(tmp_path) -> None
     executor = AuthorizedSandboxExecutor(backend, permissions, AuditLog(), approvals)
     tool = ExecuteApprovedCodeTool(executor, "trusted-agent")
     request = SandboxExecutionRequest(source="print('hello')")
-    approval_id = approvals.request("trusted-agent", request)
+    approval = approvals.request("trusted-agent", request)
 
     with pytest.raises(PermissionError, match="human approval"):
         await tool.execute(
             {
-                "approval_id": approval_id,
+                "approval_token": approval["approval_token"],
                 "request": request.model_dump(mode="json"),
             }
         )
@@ -94,12 +94,12 @@ async def test_execution_tool_runs_only_after_human_approval(tmp_path) -> None:
     executor = AuthorizedSandboxExecutor(backend, permissions, AuditLog(), approvals)
     tool = ExecuteApprovedCodeTool(executor, "trusted-agent")
     request = SandboxExecutionRequest(source="print('hello')")
-    approval_id = approvals.request("trusted-agent", request)
-    approvals.approve(approval_id, "human-reviewer")
+    approval = approvals.request("trusted-agent", request)
+    approvals.approve(approval["review_id"], "human-reviewer")
 
     response = await tool.execute(
         {
-            "approval_id": approval_id,
+            "approval_token": approval["approval_token"],
             "request": request.model_dump(mode="json"),
         }
     )
@@ -122,13 +122,13 @@ async def test_execution_tool_cannot_change_approved_source(tmp_path) -> None:
     executor = AuthorizedSandboxExecutor(backend, permissions, AuditLog(), approvals)
     tool = ExecuteApprovedCodeTool(executor, "trusted-agent")
     approved = SandboxExecutionRequest(source="print('approved')")
-    approval_id = approvals.request("trusted-agent", approved)
-    approvals.approve(approval_id, "human-reviewer")
+    approval = approvals.request("trusted-agent", approved)
+    approvals.approve(approval["review_id"], "human-reviewer")
 
     with pytest.raises(PermissionError, match="human approval"):
         await tool.execute(
             {
-                "approval_id": approval_id,
+                "approval_token": approval["approval_token"],
                 "request": SandboxExecutionRequest(
                     source="print('changed')"
                 ).model_dump(mode="json"),
