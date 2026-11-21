@@ -19,7 +19,7 @@ class FakeDockerBackend(DockerSandboxBackend):
         if arguments[0] == "create":
             return 0, b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n", b""
         if arguments[:2] == ("ps", "--all"):
-            return 0, b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\n", b""
+            return 0, b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n", b""
         if arguments[0] == "wait" and self.timeout_wait:
             raise DockerSandboxError("Docker command timed out")
         if arguments[0] == "wait":
@@ -64,7 +64,9 @@ async def test_docker_backend_applies_hardening_and_cleans_container() -> None:
         "--log-opt",
     ):
         assert flag in create
-    assert backend.commands[-1] == ("rm", "--force", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    assert backend.commands[-1] == ("rm", "--force",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    )
 
 
 @pytest.mark.asyncio
@@ -94,8 +96,10 @@ async def test_docker_backend_kills_timed_out_container_and_cleans_up() -> None:
     result = await backend.execute(SandboxExecutionRequest(source="while True: pass"))
 
     assert result.timed_out is True
-    assert ("kill", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") in backend.commands
-    assert backend.commands[-1] == ("rm", "--force", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    assert ("kill", "a" * 64) in backend.commands
+    assert backend.commands[-1] == ("rm", "--force",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    )
 
 
 @pytest.mark.asyncio
@@ -116,7 +120,9 @@ async def test_docker_backend_cleans_up_when_execution_is_cancelled() -> None:
     with pytest.raises(asyncio.CancelledError):
         await backend.execute(SandboxExecutionRequest(source="while True: pass"))
 
-    assert backend.commands[-1] == ("rm", "--force", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    assert backend.commands[-1] == ("rm", "--force",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    )
 
 
 @pytest.mark.asyncio
