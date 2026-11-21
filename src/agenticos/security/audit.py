@@ -109,7 +109,7 @@ class SQLiteAuditLog:
         self,
         database_path: Path | str,
         *,
-        signing_key: bytes,
+        signing_key: bytes | None = None,
         max_events: int = 10_000,
     ) -> None:
         if max_events < 1:
@@ -117,6 +117,11 @@ class SQLiteAuditLog:
         if not isinstance(signing_key, bytes) or len(signing_key) < 32:
             raise ValueError("Audit signing key must contain at least 32 bytes")
         self.database_path = prepare_private_sqlite_database(database_path)
+        if signing_key is None:
+            key_path = self.database_path.with_name(\n                self.database_path.name + ".audit.key"\n            )
+            signing_key = load_or_create_audit_key(key_path)
+        if not isinstance(signing_key, bytes) or len(signing_key) < 32:
+            raise ValueError("Audit signing key must contain at least 32 bytes")
         self._signing_key = signing_key
         self.max_events = max_events
         with self._connect() as connection:
