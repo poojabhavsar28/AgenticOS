@@ -41,3 +41,42 @@ async def test_tool_invocation_runs_after_explicit_grant() -> None:
     assert result == {"value": "safe"}
     assert tool.called
     assert registry.audit_log.events()[-1].outcome == "allowed"
+
+
+
+@pytest.mark.asyncio
+async def test_persistent_workspace_grant_is_required_for_tool_execution(tmp_path) -> None:
+    from agenticos.security.identity import SQLiteIdentityStore
+
+    store = SQLiteIdentityStore(tmp_path / "identities.sqlite3")
+    store.create_principal("alice")
+    store.create_principal("bob")
+    tool = EchoTool()
+    registry = ToolRegistry(identity_store=store)
+    registry.register(tool)
+
+    with pytest.raises(PermissionDenied):
+        await registry.execute(
+            "echo", {"value": "blocked"}, principal_id="alice",
+            workspace_id="workspace-a",
+        )
+    assert not tool.called
+
+    store.grant("alice", "workspace-a", "execute", "echo")
+    assert await registry.execute(
+        "echo", {"value": "allowed"}, principal_id="alice",
+        workspace_id="workspace-a",
+    ) == {"value": "allowed"}
+
+    tool.called = False
+    with pytest.raises(PermissionDenied):
+        await registry.execute(
+            "echo", {"value": "cross-workspace"}, principal_id="alice",
+            workspace_id="workspace-b",
+        )
+    with pytest.raises(PermissionDenied):
+        await registry.execute(
+            "echo", {"value": "cross-user"}, principal_id="bob",
+            workspace_id="workspace-a",
+        )
+    assert not tool.called
