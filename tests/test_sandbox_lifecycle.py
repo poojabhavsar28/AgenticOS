@@ -80,6 +80,18 @@ def test_agent_to_human_approval_to_sandbox_execution_lifecycle(
         assert approved.status_code == 200
         assert approved.json()["status"] == "approved"
 
+        # A modified request cannot reuse the approval; rejection does not consume it.
+        tampered = client.post(
+            "/v1/tools/execute_approved_code/execute",
+            headers=requester_headers,
+            json={
+                "approval_id": approval_id,
+                "request": {"source": "print('tampered source')"},
+            },
+        )
+        assert tampered.status_code == 403
+        assert StubDockerSandboxBackend.calls == 0
+
         # The agent must explicitly dispatch the exact approved request.
         executed = client.post(
             "/v1/tools/execute_approved_code/execute",
