@@ -4,6 +4,7 @@ from typing import Protocol
 
 from agenticos.security.audit import AuditLog
 from agenticos.security.policy import PermissionPolicy
+from agenticos.security.identity import SQLiteIdentityStore
 
 
 class AgentTool(Protocol):
@@ -20,10 +21,12 @@ class ToolRegistry:
         self,
         policy: PermissionPolicy | None = None,
         audit_log: AuditLog | None = None,
+        identity_store: SQLiteIdentityStore | None = None,
     ) -> None:
         self._tools: dict[str, AgentTool] = {}
         self.policy = policy or PermissionPolicy()
         self.audit_log = audit_log or AuditLog()
+        self.identity_store = identity_store
 
     def register(self, tool: AgentTool) -> None:
         name = tool.name.strip()
@@ -45,10 +48,16 @@ class ToolRegistry:
         arguments: dict[str, object],
         *,
         principal_id: str,
+        workspace_id: str = "default",
     ) -> dict[str, object]:
         tool = self.get(name)
         try:
-            self.policy.authorize(principal_id, "execute", name)
+            if self.identity_store is not None:
+                self.identity_store.authorize(
+                    principal_id, workspace_id, "execute", name
+                )
+            else:
+                self.policy.authorize(principal_id, "execute", name)
         except PermissionError:
             self.audit_log.record(principal_id, "execute", name, "denied")
             raise
