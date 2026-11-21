@@ -101,8 +101,8 @@ function status(message,error=false){$("status").textContent=message;$("status")
 async function api(path,options={}){const response=await fetch(path,{...options,headers:{...authHeaders(),...(options.headers||{})}});const body=await response.json().catch(()=>({detail:"Unexpected server response"}));if(!response.ok)throw new Error(body.detail||"Request failed ("+response.status+")");return body}
 function addMeta(container,key,value){const div=document.createElement("div");const small=document.createElement("small");small.textContent=key;const span=document.createElement("span");span.textContent=String(value);div.append(small,span);container.append(div)}
 async function loadQueue(){const items=await api("/v1/sandbox/reviews");$("queue").replaceChildren();if(!items.length){const p=document.createElement("p");p.className="muted";p.textContent="No pending approvals.";$("queue").append(p);return}
-for(const item of items){const b=document.createElement("button");b.className="item"+(selected===item.approval_id?" active":"");const strong=document.createElement("strong");strong.textContent=item.approval_id;const small=document.createElement("small");small.textContent="Requester: "+item.requester_id+" · Expires "+new Date(item.expires_at*1000).toLocaleTimeString();b.append(strong,small);b.addEventListener("click",()=>loadReview(item.approval_id));$("queue").append(b)}}
-async function loadReview(id){try{selected=id;status("Loading review…");const item=await api("/v1/sandbox/reviews/"+encodeURIComponent(id));$("empty").classList.add("hidden");$("details").classList.remove("hidden");$("requester").textContent=item.requester_id;$("approval").textContent=item.approval_id;$("expiry").textContent=new Date(item.expires_at*1000).toLocaleString();$("hash").textContent=item.request_hash;$("source").textContent=item.request?.source??"Source unavailable or expired";$("limits").replaceChildren();for(const [key,value] of Object.entries(item.request?.limits??{}))addMeta($("limits"),key,value);$("inspected").checked=false;$("approve").disabled=item.status!=="pending"||!item.request?.source;$("state").textContent=item.status.toUpperCase();status(item.status==="pending"?"Read the complete code before acknowledging.":"This request is no longer pending.",item.status!=="pending");await loadQueue()}catch(e){status(e.message,true)}}
+for(const item of items){const b=document.createElement("button");b.className="item"+(selected===item.review_id?" active":"");const strong=document.createElement("strong");strong.textContent=item.review_id;const small=document.createElement("small");small.textContent="Requester: "+item.requester_id+" · Expires "+new Date(item.expires_at*1000).toLocaleTimeString();b.append(strong,small);b.addEventListener("click",()=>loadReview(item.review_id));$("queue").append(b)}}
+async function loadReview(id){try{selected=id;status("Loading review…");const item=await api("/v1/sandbox/reviews/"+encodeURIComponent(id));$("empty").classList.add("hidden");$("details").classList.remove("hidden");$("requester").textContent=item.requester_id;$("approval").textContent=item.review_id;$("expiry").textContent=new Date(item.expires_at*1000).toLocaleString();$("hash").textContent=item.request_hash;$("source").textContent=item.request?.source??"Source unavailable or expired";$("limits").replaceChildren();for(const [key,value] of Object.entries(item.request?.limits??{}))addMeta($("limits"),key,value);$("inspected").checked=false;$("approve").disabled=item.status!=="pending"||!item.request?.source;$("state").textContent=item.status.toUpperCase();status(item.status==="pending"?"Read the complete code before acknowledging.":"This request is no longer pending.",item.status!=="pending");await loadQueue()}catch(e){status(e.message,true)}}
 $("inspected").addEventListener("change",()=>{$("approve").disabled=!$("inspected").checked||!selected});
 $("connect").addEventListener("click",async()=>{credential=$("token").value.trim();if(!credential){status("Enter the human approval credential.",true);return}try{await loadQueue();$("refresh").disabled=false;status("Reviewer authenticated. Select a request to inspect.")}catch(e){credential="";status(e.message,true)}});
 $("refresh").addEventListener("click",async()=>{try{await loadQueue();status("Review queue refreshed.")}catch(e){status(e.message,true)}});
@@ -261,8 +261,8 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             raise HTTPException(status_code=401, detail="Valid human approval credential required")
         return manager.list_pending()
 
-    @app.get("/v1/sandbox/reviews/{approval_id}")
-    async def get_sandbox_review(approval_id: str, request: Request):
+    @app.get("/v1/sandbox/reviews/{review_id}")
+    async def get_sandbox_review(review_id: str, request: Request):
         manager = request.app.state.sandbox_approvals
         approval_auth = request.app.state.sandbox_approval_authenticator
         principal = (
@@ -271,7 +271,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         )
         if manager is None or principal is None:
             raise HTTPException(status_code=401, detail="Valid human approval credential required")
-        review = manager.get_review(approval_id)
+        review = manager.get_review(review_id)
         if review is None:
             raise HTTPException(status_code=404, detail="Approval not found")
         return review
@@ -286,15 +286,15 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             principal = getattr(request.state, "principal", None)
             if principal is None:
                 raise HTTPException(status_code=401, detail="Authenticated requester required")
-            approval_id = manager.request(principal.principal_id, execution_request)
+            approval = manager.request(principal.principal_id, execution_request)
         except HTTPException:
             raise
         except (ValueError, TypeError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return {"approval_id": approval_id, "status": "pending", "expires_in_seconds": 300}
+        return {"review_id": approval["review_id"], "approval_token": approval["approval_token"], "status": "pending", "expires_in_seconds": 300}
 
-    @app.post("/v1/sandbox/approvals/{approval_id}/approve")
-    async def approve_sandbox_execution(approval_id: str, request: Request):
+    @app.post("/v1/sandbox/approvals/{review_id}/approve")
+    async def approve_sandbox_execution(review_id: str, request: Request):
         manager = request.app.state.sandbox_approvals
         approval_auth = request.app.state.sandbox_approval_authenticator
         if manager is None or approval_auth is None:
@@ -303,10 +303,10 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         if principal is None:
             raise HTTPException(status_code=401, detail="Valid human approval credential required")
         try:
-            manager.approve(approval_id, principal.principal_id)
+            manager.approve(review_id, principal.principal_id)
         except ApprovalError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
-        return {"approval_id": approval_id, "status": "approved"}
+        return {"review_id": review_id, "status": "approved"}
 
     @app.post("/v1/sandbox/execute")
     async def execute_approved_sandbox_request(payload: dict[str, object], request: Request):
@@ -316,15 +316,15 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         principal = getattr(request.state, "principal", None)
         if principal is None:
             raise HTTPException(status_code=401, detail="Authenticated requester required")
-        approval_id = payload.get("approval_id")
-        if not isinstance(approval_id, str) or not approval_id:
-            raise HTTPException(status_code=422, detail="approval_id is required")
+        approval_token = payload.get("approval_token")
+        if not isinstance(approval_token, str) or not approval_token:
+            raise HTTPException(status_code=422, detail="approval_token is required")
         try:
             execution_request = SandboxExecutionRequest.model_validate(payload.get("request"))
             result = await executor.execute(
                 principal.principal_id,
                 execution_request,
-                approval_id=approval_id,
+                approval_token=approval_token,
             )
         except (ApprovalError, PermissionDenied) as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
