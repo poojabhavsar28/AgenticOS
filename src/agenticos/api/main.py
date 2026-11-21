@@ -136,6 +136,17 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             config.sandbox_execution_principal or "local-operator",
             config.api_auth_token,
         )
+        # The configured local operator is explicitly provisioned for the
+        # legacy default workspace. Other workspaces remain default-deny and
+        # require an administrator-created persistent grant.
+        if config.sandbox_enabled:
+            for tool_name in ("request_code_execution", "execute_approved_code"):
+                identity_store.grant(
+                    config.sandbox_execution_principal or "local-operator",
+                    "default",
+                    "execute",
+                    tool_name,
+                )
     # Runtime and security stores share dedicated SQLite paths. Prepare both
     # before any store opens them so directories, databases and sidecars inherit
     # restrictive permissions from the first write.
