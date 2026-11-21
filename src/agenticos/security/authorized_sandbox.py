@@ -20,6 +20,17 @@ class AuditRecorder(Protocol):
         """Persist or buffer one metadata-only security event."""
 
 
+class AuditCompletionError(RuntimeError):
+    """Execution finished, but its terminal audit event could not be persisted."""
+
+    def __init__(self, result: SandboxExecutionResult) -> None:
+        self.result = result
+        super().__init__(
+            "Sandbox execution completed, but completion audit persistence failed; "
+            "do not retry automatically. The execution result is attached."
+        )
+
+
 class AuthorizedSandboxExecutor:
     """Require permission and a one-time human approval before code execution."""
 
@@ -75,10 +86,15 @@ class AuthorizedSandboxExecutor:
             )
             raise
 
-        self.audit_log.record(
-            principal_id,
-            SANDBOX_EXECUTE_ACTION,
-            SANDBOX_PYTHON_RESOURCE,
-            "timed_out" if result.timed_out else "completed",
-        )
+        try:
+            self.audit_log.record(
+                principal_id,
+                SANDBOX_EXECUTE_ACTION,
+                SANDBOX_PYTHON_RESOURCE,
+                "timed_out" if result.timed_out else "completed",
+            )
+        except Exception as exc:
+            # Execution already happened. Preserve the result and make the
+            # ambiguous audit outcome explicit so callers do not blindly retry.
+            raise AuditCompletionError(result) from exc
         return result
