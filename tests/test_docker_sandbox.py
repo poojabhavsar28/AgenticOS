@@ -17,9 +17,9 @@ class FakeDockerBackend(DockerSandboxBackend):
         if arguments[:2] == ("image", "inspect"):
             return 0, b"", b""
         if arguments[0] == "create":
-            return 0, b"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n", b""
+            return 0, b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n", b""
         if arguments[:2] == ("ps", "--all"):
-            return 0, b"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\n", b""
+            return 0, b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\n", b""
         if arguments[0] == "wait" and self.timeout_wait:
             raise DockerSandboxError("Docker command timed out")
         if arguments[0] == "wait":
@@ -64,7 +64,7 @@ async def test_docker_backend_applies_hardening_and_cleans_container() -> None:
         "--log-opt",
     ):
         assert flag in create
-    assert backend.commands[-1] == ("rm", "--force", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+    assert backend.commands[-1] == ("rm", "--force", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 
 @pytest.mark.asyncio
@@ -94,8 +94,8 @@ async def test_docker_backend_kills_timed_out_container_and_cleans_up() -> None:
     result = await backend.execute(SandboxExecutionRequest(source="while True: pass"))
 
     assert result.timed_out is True
-    assert ("kill", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") in backend.commands
-    assert backend.commands[-1] == ("rm", "--force", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+    assert ("kill", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") in backend.commands
+    assert backend.commands[-1] == ("rm", "--force", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 
 @pytest.mark.asyncio
@@ -106,7 +106,7 @@ async def test_docker_backend_cleans_up_when_execution_is_cancelled() -> None:
             if arguments[:2] == ("image", "inspect"):
                 return 0, b"", b""
             if arguments[0] == "create":
-                return 0, b"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n", b""
+                return 0, b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n", b""
             if arguments[0] == "wait":
                 raise asyncio.CancelledError
             return 0, b"", b""
@@ -116,7 +116,7 @@ async def test_docker_backend_cleans_up_when_execution_is_cancelled() -> None:
     with pytest.raises(asyncio.CancelledError):
         await backend.execute(SandboxExecutionRequest(source="while True: pass"))
 
-    assert backend.commands[-1] == ("rm", "--force", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+    assert backend.commands[-1] == ("rm", "--force", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 
 @pytest.mark.asyncio
