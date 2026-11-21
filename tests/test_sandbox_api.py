@@ -68,7 +68,6 @@ def test_execution_requires_approval_and_requester_auth(fake_model, tmp_path):
         json={"request": {"source": "print('hello')"}},
     )
     approval = created.json()
-    review_id = approval["review_id"]
     payload = {
         "approval_token": approval["approval_token"],
         "request": {"source": "print('hello')"},
