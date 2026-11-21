@@ -3,8 +3,8 @@
 from typing import Protocol
 
 from agenticos.security.audit import AuditLog
-from agenticos.security.policy import PermissionPolicy
 from agenticos.security.identity import SQLiteIdentityStore
+from agenticos.security.policy import PermissionPolicy
 
 
 class AgentTool(Protocol):
