@@ -5,7 +5,7 @@ from agenticos.security.approval import (
     HumanApprovalManager,
     SQLiteExecutionApprovalStore,
 )
-from agenticos.security.audit import AuditEvent, AuditLog, SQLiteAuditLog
+from agenticos.security.audit import (\n    AuditEvent,\n    AuditIntegrityError,\n    AuditLog,\n    SQLiteAuditLog,\n    load_or_create_audit_key,\n)
 from agenticos.security.authorized_sandbox import AuthorizedSandboxExecutor
 from agenticos.security.docker_sandbox import DockerSandboxBackend, DockerSandboxError
 from agenticos.security.execution import (
@@ -27,7 +27,7 @@ __all__ = [
     "ApprovalError",
     "HumanApprovalManager",
     "SQLiteExecutionApprovalStore",
-    "AuditEvent",
+    "AuditEvent",\n    "AuditIntegrityError",\n    "load_or_create_audit_key",
     "AuthorizedSandboxExecutor",
     "AuditLog",
     "SQLiteAuditLog",
