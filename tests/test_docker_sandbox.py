@@ -17,11 +17,11 @@ class FakeDockerBackend(DockerSandboxBackend):
         if arguments[:2] == ("image", "inspect"):
             return 0, b"", b""
         if arguments[0] == "create":
-            return 0, b"container-id\\n", b""
+            return 0, b"container-id\n", b""
         if arguments[0] == "wait" and self.timeout_wait:
             raise DockerSandboxError("Docker command timed out")
         if arguments[0] == "wait":
-            return 0, b"0\\n", b""
+            return 0, b"0\n", b""
         if arguments[0] == "logs":
             return 0, b"captured output", b""
         return 0, b"", b""
@@ -104,7 +104,7 @@ async def test_docker_backend_cleans_up_when_execution_is_cancelled() -> None:
             if arguments[:2] == ("image", "inspect"):
                 return 0, b"", b""
             if arguments[0] == "create":
-                return 0, b"container-id\\n", b""
+                return 0, b"container-id\n", b""
             if arguments[0] == "wait":
                 raise asyncio.CancelledError
             return 0, b"", b""
