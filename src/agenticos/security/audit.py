@@ -98,7 +98,8 @@ def load_or_create_audit_key(key_path: Path | str) -> bytes:
 class SQLiteAuditLog:
     """Append-only HMAC-chained audit store.
 
-    The HMAC key must be supplied by the operator and stored outside this database.
+    If no key is supplied, a private sibling key file is created and reused.
+    Production deployments should supply a key from an independent secret manager.
     To detect deletion of the newest rows, callers must retain the returned chain
     head in an independent trusted location and pass it to verify_integrity().
     """
