@@ -328,6 +328,23 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Principal not found or disabled") from exc
         return {"token_id": token_id, "token": token}
 
+    @app.post("/v1/admin/tokens/{token_id}/rotate")
+    async def admin_rotate_token(token_id: str, request: Request):
+        require_identity_admin(request)
+        token_owner = request.app.state.identity_store.principal_for_token(token_id)
+        if token_owner is None:
+            raise HTTPException(status_code=404, detail="Active token not found")
+        if token_owner == config.identity_admin_principal:
+            raise HTTPException(
+                status_code=409,
+                detail="Bootstrap administrator credentials are managed through IDENTITY_ADMIN_TOKEN",
+            )
+        try:
+            new_token_id, new_token = request.app.state.identity_store.rotate_token(token_id)
+        except PermissionError as exc:
+            raise HTTPException(status_code=404, detail="Active token not found") from exc
+        return {"token_id": new_token_id, "token": new_token, "status": "rotated"}
+
     @app.delete("/v1/admin/tokens/{token_id}")
     async def admin_revoke_token(token_id: str, request: Request):
         require_identity_admin(request)
