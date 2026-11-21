@@ -91,7 +91,9 @@ class SQLiteIdentityStore:
                 (principal_id,),
             ).fetchone()
             if principal is None or not principal["enabled"]:
-                raise PermissionDenied("Cannot issue credentials for an unknown or disabled principal")
+                raise PermissionDenied(
+                    "Cannot issue credentials for an unknown or disabled principal"
+                )
             connection.execute(
                 """
                 INSERT INTO identity_tokens(token_id, principal_id, verifier, created_at)
@@ -124,7 +126,10 @@ class SQLiteIdentityStore:
         token_id = self._required(token_id, "token_id")
         with self._connect() as connection:
             cursor = connection.execute(
-                "UPDATE identity_tokens SET revoked_at = ? WHERE token_id = ? AND revoked_at IS NULL",
+                """
+                UPDATE identity_tokens
+                SET revoked_at = ? WHERE token_id = ? AND revoked_at IS NULL
+                """,
                 (int(time.time()), token_id),
             )
             if cursor.rowcount != 1:
@@ -147,7 +152,9 @@ class SQLiteIdentityStore:
                 (token_id,),
             ).fetchone()
             if row is None or not row["enabled"]:
-                raise PermissionDenied("Cannot rotate an unknown, revoked, or disabled credential")
+                raise PermissionDenied(
+                    "Cannot rotate an unknown, revoked, or disabled credential"
+                )
             connection.execute(
                 "UPDATE identity_tokens SET revoked_at = ? WHERE token_id = ? AND revoked_at IS NULL",
                 (int(time.time()), token_id),
