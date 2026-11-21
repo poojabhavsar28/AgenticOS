@@ -122,6 +122,17 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         config.api_auth_token, config.sandbox_approval_token
     }:
         raise ValueError("IDENTITY_ADMIN_TOKEN must differ from other credentials")
+    operator_principal = config.sandbox_execution_principal or "local-operator"
+    if config.identity_admin_token and not config.identity_admin_principal.strip():
+        raise ValueError("IDENTITY_ADMIN_PRINCIPAL must be non-empty")
+    if (
+        config.identity_admin_token
+        and config.api_auth_token
+        and config.identity_admin_principal == operator_principal
+    ):
+        raise ValueError(
+            "IDENTITY_ADMIN_PRINCIPAL must differ from the ordinary operator principal"
+        )
     if config.sandbox_enabled and not all(
         (
             config.api_auth_token,
@@ -320,6 +331,12 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     @app.delete("/v1/admin/tokens/{token_id}")
     async def admin_revoke_token(token_id: str, request: Request):
         require_identity_admin(request)
+        token_owner = request.app.state.identity_store.principal_for_token(token_id)
+        if token_owner == config.identity_admin_principal:
+            raise HTTPException(
+                status_code=409,
+                detail="Bootstrap administrator credentials are managed through IDENTITY_ADMIN_TOKEN",
+            )
         try:
             request.app.state.identity_store.revoke_token(token_id)
         except KeyError as exc:
@@ -332,6 +349,11 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         enabled = payload.get("enabled")
         if not isinstance(enabled, bool):
             raise HTTPException(status_code=422, detail="enabled must be a boolean")
+        if principal_id == config.identity_admin_principal and not enabled:
+            raise HTTPException(
+                status_code=409,
+                detail="The bootstrap administrator cannot disable itself",
+            )
         try:
             request.app.state.identity_store.set_principal_enabled(principal_id, enabled)
         except KeyError as exc:
