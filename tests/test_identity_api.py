@@ -1,5 +1,6 @@
 """HTTP authentication integration tests for persistent identities."""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from agenticos.api.main import create_app
@@ -13,6 +14,7 @@ def _settings(tmp_path):
         operations_database_path=tmp_path / "operations.sqlite3",
         api_auth_token="configured-operator-secret",
         sandbox_execution_principal="operator",
+        identity_admin_token="configured-admin-secret",
     )
 
 
@@ -65,3 +67,88 @@ def test_configured_identity_survives_application_restart(fake_model, tmp_path) 
         )
         assert response.status_code == 200
         assert response.json() == []
+
+
+
+def test_identity_admin_can_manage_principals_tokens_and_workspace_grants(
+    fake_model, tmp_path
+) -> None:
+    with TestClient(create_app(_settings(tmp_path), model_client=fake_model)) as client:
+        admin = {"Authorization": "Bearer configured-admin-secret"}
+        ordinary = {"Authorization": "Bearer configured-operator-secret"}
+
+        # Ordinary authenticated users cannot provision identities or grant access.
+        assert client.post(
+            "/v1/admin/principals", json={"principal_id": "alice"}, headers=ordinary
+        ).status_code == 403
+
+        created = client.post(
+            "/v1/admin/principals", json={"principal_id": "alice"}, headers=admin
+        )
+        assert created.status_code == 201
+        assert created.json() == {"principal_id": "alice", "status": "created"}
+
+        issued = client.post("/v1/admin/principals/alice/tokens", headers=admin)
+        assert issued.status_code == 201
+        token_data = issued.json()
+        assert token_data["token"].startswith("agx_")
+        assert client.app.state.identity_store.authenticate(token_data["token"]).principal_id == "alice"
+
+        grant_path = "/v1/admin/principals/alice/workspaces/project-a/grants"
+        grant = client.put(
+            grant_path,
+            json={"action": "execute", "resource": "echo"},
+            headers=admin,
+        )
+        assert grant.status_code == 200
+        store = client.app.state.identity_store
+        assert store.is_allowed("alice", "project-a", "execute", "echo")
+        assert not store.is_allowed("alice", "project-b", "execute", "echo")
+
+        # A normal principal cannot manage its own privileges.
+        assert client.put(
+            grant_path,
+            json={"action": "execute", "resource": "admin"},
+            headers={"Authorization": f"Bearer {token_data['token']}"},
+        ).status_code == 403
+
+        revoked = client.delete(
+            grant_path,
+            json={"action": "execute", "resource": "echo"},
+            headers=admin,
+        )
+        assert revoked.status_code == 200
+        assert not store.is_allowed("alice", "project-a", "execute", "echo")
+
+        disabled = client.patch(
+            "/v1/admin/principals/alice",
+            json={"enabled": False},
+            headers=admin,
+        )
+        assert disabled.status_code == 200
+        assert store.authenticate(token_data["token"]) is None
+
+        # Token revocation is separately supported for active credentials.
+        client.patch(
+            "/v1/admin/principals/alice",
+            json={"enabled": True},
+            headers=admin,
+        )
+        assert store.authenticate(token_data["token"]) is not None
+        revoked_token = client.delete(
+            f"/v1/admin/tokens/{token_data['token_id']}", headers=admin
+        )
+        assert revoked_token.status_code == 200
+        assert store.authenticate(token_data["token"]) is None
+
+
+def test_identity_admin_routes_fail_closed_without_bootstrap_admin(fake_model, tmp_path):
+    settings = _settings(tmp_path)
+    settings.identity_admin_token = None
+    with TestClient(create_app(settings, model_client=fake_model)) as client:
+        response = client.post(
+            "/v1/admin/principals",
+            json={"principal_id": "attacker"},
+            headers={"Authorization": "Bearer configured-operator-secret"},
+        )
+        assert response.status_code == 403
