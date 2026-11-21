@@ -198,7 +198,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
                 Permission(config.sandbox_execution_principal, "execute", "execute_approved_code"),
             }
         )
-        tool_registry = ToolRegistry(policy=tool_permissions, audit_log=audit_log)
+        tool_registry = ToolRegistry(policy=tool_permissions, audit_log=audit_log, identity_store=identity_store)
         tool_registry.register(
             RequestCodeExecutionApprovalTool(
                 sandbox_approvals, config.sandbox_execution_principal
@@ -354,8 +354,10 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         return result.model_dump(mode="json")
 
     @app.post("/v1/tools/{tool_name}/execute")
+    @app.post("/v1/workspaces/{workspace_id}/tools/{tool_name}/execute")
     async def execute_agent_tool(
-        tool_name: str, payload: dict[str, object], request: Request
+        tool_name: str, payload: dict[str, object], request: Request,
+        workspace_id: str = "default",
     ) -> dict[str, object]:
         principal = getattr(request.state, "principal", None)
         if principal is None:
@@ -364,7 +366,8 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             raise HTTPException(status_code=503, detail="Agent tools are not configured")
         try:
             return await request.app.state.workflow.execute_tool(
-                tool_name, payload, principal_id=principal.principal_id
+                tool_name, payload, principal_id=principal.principal_id,
+                workspace_id=workspace_id,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
