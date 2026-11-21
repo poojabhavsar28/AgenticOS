@@ -51,7 +51,7 @@ class AuthorizedSandboxExecutor:
         principal_id: str,
         request: SandboxExecutionRequest,
         *,
-        approval_id: str,
+        approval_token: str,
     ) -> SandboxExecutionResult:
         try:
             self.permissions.authorize(
@@ -64,7 +64,7 @@ class AuthorizedSandboxExecutor:
             raise
 
         try:
-            self.approvals.consume(approval_id, principal_id, request)
+            self.approvals.consume(approval_token, principal_id, request)
         except ApprovalError:
             self.audit_log.record(
                 principal_id,
