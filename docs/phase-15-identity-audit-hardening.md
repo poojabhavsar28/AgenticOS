@@ -12,6 +12,37 @@ Move AgenticOS beyond its current single-operator authentication model toward ex
 4. Define whether sandbox output is combined or split; preserve a typed and documented contract.
 5. Define a tamper-evident audit format and verification path, with retention and access controls.
 
+## SQLite storage hardening implementation
+
+The runtime now prepares the configured operations and memory database paths before opening their stores. The approval store also prepares its own path, and each connection reapplies restrictive modes to any existing database, rollback journal, WAL, and shared-memory sidecar.
+
+### POSIX deployment
+
+Use a dedicated directory owned by the service account. The default `.agenticos` directory is created/restricted to mode `0700`; database and existing sidecar files are restricted to `0600`. For a custom data directory, provision it with restrictive permissions before startup:
+
+```sh
+install -d -m 0700 -o agenticos -g agenticos /var/lib/agenticos
+chmod 0700 /var/lib/agenticos
+```
+
+Custom parent directories that are group/other accessible or owned by another account are rejected rather than silently changing permissions on a potentially shared directory. Database paths must not be symlinks and must resolve to regular files.
+
+### Windows deployment
+
+Python's POSIX mode bits are not an NTFS ACL security boundary. Create a dedicated directory and grant access only to the Windows service identity and SYSTEM (replace the account with the actual service identity):
+
+```powershell
+New-Item -ItemType Directory -Force C:\ProgramData\AgenticOS
+icacls C:\ProgramData\AgenticOS /inheritance:r
+icacls C:\ProgramData\AgenticOS /grant:r "NT SERVICE\AgenticOS:(OI)(CI)F" "SYSTEM:(OI)(CI)F"
+```
+
+The service identity must have modify access to create and update the SQLite database and sidecars. Do not grant access to interactive users or broad groups. The automated mode-bit tests are POSIX-only; Windows ACL correctness must be verified on the target host using `icacls` and the actual service account.
+
+### Verification boundary
+
+The POSIX tests verify directory mode `0700`, database/sidecar mode `0600`, and rejection of a permissive custom directory. These checks do not establish protection against root/Administrator, filesystem snapshots, backups, or a compromised service account. Backups must inherit equivalent access restrictions.
+
 ## Scope
 
 ### 1. Identity lifecycle
