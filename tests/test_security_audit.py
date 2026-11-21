@@ -3,9 +3,9 @@ import sqlite3
 
 import pytest
 
-from agenticos.security import AuditLog
 from agenticos.security.audit import (
     AuditIntegrityError,
+    AuditLog,
     SQLiteAuditLog,
     load_or_create_audit_key,
 )
