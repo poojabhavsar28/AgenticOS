@@ -44,6 +44,6 @@ class ExecuteApprovedCodeTool:
         if not isinstance(approval_token, str) or not approval_token.strip():
             raise ValueError("approval_token is required")
         result = await self.executor.execute(
-            self.principal_id, request, approval_id=approval_token
+            self.principal_id, request, approval_token=approval_token
         )
         return result.model_dump(mode="json")
