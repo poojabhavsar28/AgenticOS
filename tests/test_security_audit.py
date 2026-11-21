@@ -75,6 +75,23 @@ def test_sqlite_audit_chain_detects_deletion_and_truncation_checkpoint(tmp_path)
         audit.verify_integrity(expected_head=checkpoint)
 
 
+
+def test_sqlite_audit_chain_detects_tail_truncation_with_checkpoint(tmp_path) -> None:
+    database = tmp_path / "audit.sqlite3"
+    audit = SQLiteAuditLog(database, signing_key=KEY)
+    audit.record("principal-a", "execute", "tool-a", "allowed")
+    audit.record("principal-b", "execute", "tool-b", "allowed")
+    checkpoint = audit.chain_head()
+    with sqlite3.connect(database) as connection:
+        connection.execute("DROP TRIGGER audit_chain_no_delete")
+        connection.execute(
+            "DELETE FROM security_audit_chain_events WHERE sequence = 2"
+        )
+    assert audit.verify_integrity()
+    with pytest.raises(AuditIntegrityError, match="trusted checkpoint"):
+        audit.verify_integrity(expected_head=checkpoint)
+
+
 def test_sqlite_audit_chain_rejects_short_signing_key(tmp_path) -> None:
     with pytest.raises(ValueError, match="32 bytes"):
         SQLiteAuditLog(tmp_path / "audit.sqlite3", signing_key=b"short")
