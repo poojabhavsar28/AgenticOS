@@ -156,11 +156,20 @@ def test_identity_admin_can_manage_principals_tokens_and_workspace_grants(
         )
         assert admin_revoke.status_code == 409
         assert store.authenticate(token_data["token"]) is not None
+        rotated = client.post(
+            f"/v1/admin/tokens/{token_data['token_id']}/rotate", headers=admin
+        )
+        assert rotated.status_code == 200
+        rotated_data = rotated.json()
+        assert rotated_data["status"] == "rotated"
+        assert store.authenticate(token_data["token"]) is None
+        assert store.authenticate(rotated_data["token"]).principal_id == "alice"
+
         revoked_token = client.delete(
-            f"/v1/admin/tokens/{token_data['token_id']}", headers=admin
+            f"/v1/admin/tokens/{rotated_data['token_id']}", headers=admin
         )
         assert revoked_token.status_code == 200
-        assert store.authenticate(token_data["token"]) is None
+        assert store.authenticate(rotated_data["token"]) is None
 
 
 def test_identity_admin_routes_fail_closed_without_bootstrap_admin(fake_model, tmp_path):
