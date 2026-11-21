@@ -148,3 +148,20 @@ async def test_authorized_execution_supports_persistent_sqlite_audit(tmp_path) -
     events = reopened.events()
     assert [event.outcome for event in events] == ["started", "completed"]
     assert all("not stored in audit" not in event.resource for event in events)
+
+@pytest.mark.asyncio
+async def test_audit_store_failure_fails_closed_before_execution(tmp_path) -> None:
+    class UnavailableAudit:
+        def record(self, principal_id, action, resource, outcome):
+            raise OSError("audit database unavailable")
+
+    backend = StubBackend()
+    request = SandboxExecutionRequest(source="print('must not execute')")
+    approvals, approval_id = make_approval(tmp_path, request)
+    executor = make_executor(backend, UnavailableAudit(), approvals)
+
+    with pytest.raises(OSError, match="audit database unavailable"):
+        await executor.execute("agent-1", request, approval_id=approval_id)
+
+    assert backend.calls == 0
+
