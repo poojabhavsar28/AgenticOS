@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from agenticos.security.docker_sandbox import DockerSandboxBackend, DockerSandboxError
@@ -15,11 +17,11 @@ class FakeDockerBackend(DockerSandboxBackend):
         if arguments[:2] == ("image", "inspect"):
             return 0, b"", b""
         if arguments[0] == "create":
-            return 0, b"container-id\n", b""
+            return 0, b"container-id\\n", b""
         if arguments[0] == "wait" and self.timeout_wait:
             raise DockerSandboxError("Docker command timed out")
         if arguments[0] == "wait":
-            return 0, b"0\n", b""
+            return 0, b"0\\n", b""
         if arguments[0] == "logs":
             return 0, b"captured output", b""
         return 0, b"", b""
@@ -95,6 +97,27 @@ async def test_docker_backend_kills_timed_out_container_and_cleans_up() -> None:
 
 
 @pytest.mark.asyncio
+async def test_docker_backend_cleans_up_when_execution_is_cancelled() -> None:
+    class CancelledWaitBackend(FakeDockerBackend):
+        async def _docker(self, *arguments: str, timeout: float = 15.0):
+            self.commands.append(arguments)
+            if arguments[:2] == ("image", "inspect"):
+                return 0, b"", b""
+            if arguments[0] == "create":
+                return 0, b"container-id\\n", b""
+            if arguments[0] == "wait":
+                raise asyncio.CancelledError
+            return 0, b"", b""
+
+    backend = CancelledWaitBackend(approved_policy())
+
+    with pytest.raises(asyncio.CancelledError):
+        await backend.execute(SandboxExecutionRequest(source="while True: pass"))
+
+    assert backend.commands[-1] == ("rm", "--force", "container-id")
+
+
+@pytest.mark.asyncio
 async def test_docker_backend_rejects_source_over_configured_limit() -> None:
     backend = FakeDockerBackend(approved_policy())
     request = SandboxExecutionRequest(
@@ -104,7 +127,6 @@ async def test_docker_backend_rejects_source_over_configured_limit() -> None:
     with pytest.raises(ValueError, match="input limit"):
         await backend.execute(request)
     assert backend.commands == []
-
 
 
 @pytest.mark.asyncio
