@@ -14,10 +14,13 @@ AgenticOS is a local-first, multi-agent coding platform. Model inference is rout
 - **Agent collaboration:** capability-based delegation, dependency-aware task coordination, and bounded in-process agent messaging.
 - **Workspace operations:** UTF-8 file reads, bounded listings, and staged writes that require explicit approval.
 - **Evaluation gates:** deterministic checks for all four workflow stages, output bounds, required terms, and aggregate pass-rate thresholds.
-- **Default-deny permissions:** registered tools require explicit principal/action/resource grants before invocation; allowed and denied calls are audited in a bounded in-memory log.
+- **Default-deny permissions:** registered tools require persistent principal/workspace/action/resource grants before invocation; authorization decisions are audited in the durable operations log.
 - **Fail-closed execution:** generated-code execution remains disabled unless an independently isolated backend is explicitly configured.
 - **Durable operations:** SQLite stores run checkpoints and append-only API audit events across process restarts.\n- **Local token streaming:** Ollama model chunks can be observed as bounded, run-scoped SSE events; non-streaming inference remains supported.
-- **API authentication:** a configured single-operator bearer token protects `/v1/*`; `/health` and `/ready` remain public.
+- **Persistent identities:** bearer secrets are stored only as SHA-256 verifiers; credentials can be issued, rotated, revoked, and disabled.
+- **Workspace authorization:** tool execution requires exact persistent grants scoped to a principal and workspace; unmatched requests are denied.
+- **Identity administration:** a separately configured bootstrap administrator manages principals, credentials, and grants; the administrator cannot disable itself or revoke its bootstrap credential through the API.
+- **API authentication:** configured operator and administrator bearer tokens protect `/v1/*`; `/health` and `/ready` remain public.
 
 ## Requirements
 
@@ -47,7 +50,7 @@ python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
 
-Copy `.env.example` to `.env` and adjust settings. Defaults: Ollama at `http://localhost:11434`, 300-second run timeout, two concurrent runs, and SQLite memory at `.agenticos/memory.sqlite3`.
+Copy `.env.example` to `.env` and adjust settings. Defaults: Ollama at `http://localhost:11434`, 300-second run timeout, two concurrent runs, and SQLite memory at `.agenticos/memory.sqlite3`. Set `API_AUTH_TOKEN` to provision the ordinary operator identity. Set a separate high-entropy `IDENTITY_ADMIN_TOKEN` to enable `/v1/admin/*`; `IDENTITY_ADMIN_PRINCIPAL` defaults to `local-admin`. Keep both credentials outside source control and do not reuse secrets.
 
 ## Run
 
@@ -83,4 +86,4 @@ pytest -q
 
 ## Current limitations
 
-This remains a development foundation, not a production-certified autonomous coding environment. The opt-in Docker sandbox now enforces container-level resource and isolation controls, but it trusts the Docker daemon and host kernel and is not a guarantee against runtime or kernel escapes. Multi-user identity lifecycle, token rotation/revocation, tamper-evident audit storage, and fine-grained per-workspace authorization are not implemented. The permission policy still uses in-memory grants. Human approval is limited to configured operator identities; it is not a multi-user identity system. Session identifiers are not authentication credentials. Repository indexing is explicit and bounded; hidden, binary, oversized, and dependency/cache files are skipped. Search is local keyword/SQLite FTS5, not semantic retrieval, and the index must be refreshed after file changes. Retrieved repository text and project notes are untrusted reference material. Workspace path validation alone is not an operating-system sandbox. Review generated code before use.
+This remains a development foundation, not a production-certified autonomous coding environment. The opt-in Docker sandbox now enforces container-level resource and isolation controls, but it trusts the Docker daemon and host kernel and is not a guarantee against runtime or kernel escapes. Identity records, token verifiers, revocation state, and exact workspace grants persist in SQLite. Administrator APIs are available only when a separate `IDENTITY_ADMIN_TOKEN` is configured. The bootstrap administrator is provisioned from configuration and cannot disable itself or revoke its bootstrap credential through the API. The local deployment still trusts the host administrator and filesystem protections; this is not an external identity provider or a distributed authorization service. Session identifiers are not authentication credentials. Repository indexing is explicit and bounded; hidden, binary, oversized, and dependency/cache files are skipped. Search is local keyword/SQLite FTS5, not semantic retrieval, and the index must be refreshed after file changes. Retrieved repository text and project notes are untrusted reference material. Workspace path validation alone is not an operating-system sandbox. Review generated code before use.
