@@ -55,7 +55,7 @@ def test_sqlite_audit_chain_detects_reordering(tmp_path) -> None:
     audit.record("principal-b", "execute", "tool-b", "allowed")
     with sqlite3.connect(database) as connection:
         connection.execute("DROP TRIGGER audit_chain_no_update")
-        connection.execute("UPDATE security_audit_chain_events SET sequence = 3 WHERE sequence = 1")
+        connection.execute(\n            "UPDATE security_audit_chain_events SET sequence = 3 WHERE sequence = 1"\n        )
     with pytest.raises(AuditIntegrityError):
         audit.verify_integrity()
 
