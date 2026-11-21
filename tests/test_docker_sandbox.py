@@ -115,7 +115,7 @@ async def test_docker_backend_cleans_up_when_execution_is_cancelled() -> None:
             if arguments[0] == "create":
                 return 0, b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n", b""
             if arguments[:2] == ("ps", "--all"):
-                return 0, b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\n", b""
+                return 0, b"a" * 64 + b"\\n", b""
             if arguments[0] == "wait":
                 raise asyncio.CancelledError
             return 0, b"", b""
