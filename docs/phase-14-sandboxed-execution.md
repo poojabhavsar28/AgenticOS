@@ -78,3 +78,10 @@ Each step should be delivered as a small, focused commit. Do not merge this phas
 - Resource enforcement differs across operating systems and Docker implementations; supported platforms and exact guarantees must be documented.
 - Windows developer environments may require Docker Desktop/WSL2, while CI can use Linux containers. Tests must not assume Docker is installed.
 - A security review must verify the final Docker API invocation and all mount, namespace, capability and resource settings before enabling execution outside development.
+
+
+## Optional real-Docker CI verification
+
+The ordinary quality job deliberately runs without requiring Docker. To enable the separate real-container integration job, configure the repository Actions variable `AGENTICOS_TEST_SANDBOX_IMAGE` with an administrator-approved Python image reference pinned to a full SHA-256 digest, for example `registry.example/python@sha256:<64-lowercase-hex-digest>`.
+
+When that variable is non-empty, GitHub Actions starts the Docker integration job, pulls the configured image during CI setup, and runs `tests/test_docker_sandbox_integration.py` with `AGENTICOS_DOCKER_INTEGRATION=1`. The test backend itself still never pulls an image: it verifies that the exact configured digest reference is already present locally before creating a container. Review the image provenance and update the digest deliberately; do not use a mutable tag. Without the repository variable, this job is skipped and normal CI remains Docker-independent.
