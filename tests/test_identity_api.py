@@ -1,6 +1,5 @@
 """HTTP authentication integration tests for persistent identities."""
 
-import pytest
 from fastapi.testclient import TestClient
 
 from agenticos.api.main import create_app
