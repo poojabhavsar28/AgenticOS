@@ -1,3 +1,4 @@
+import os
 import sqlite3
 
 import pytest
@@ -103,7 +104,7 @@ def test_audit_signing_key_is_created_once_and_reused(tmp_path) -> None:
     second = load_or_create_audit_key(key_path)
     assert len(first) == 32
     assert second == first
-    if __import__("os").name != "nt":
+    if os.name != "nt":
         assert key_path.stat().st_mode & 0o077 == 0
 
 
