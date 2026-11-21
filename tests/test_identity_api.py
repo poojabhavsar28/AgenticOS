@@ -91,7 +91,9 @@ def test_identity_admin_can_manage_principals_tokens_and_workspace_grants(
         assert issued.status_code == 201
         token_data = issued.json()
         assert token_data["token"].startswith("agx_")
-        assert client.app.state.identity_store.authenticate(token_data["token"]).principal_id == "alice"
+        authenticated = client.app.state.identity_store.authenticate(token_data["token"])
+        assert authenticated is not None
+        assert authenticated.principal_id == "alice"
 
         grant_path = "/v1/admin/principals/alice/workspaces/project-a/grants"
         grant = client.put(
