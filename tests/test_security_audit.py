@@ -1,3 +1,7 @@
+"""Tamper-evident audit storage regression tests."""
+
+# ruff: noqa: I001
+
 import os
 import sqlite3
 
