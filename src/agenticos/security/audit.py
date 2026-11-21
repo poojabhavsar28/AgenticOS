@@ -1,9 +1,17 @@
-"""SQLite-backed append-only security audit events."""
+"""SQLite-backed audit events and tamper-evident chained audit storage."""
 
+import hashlib
+import hmac
+import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+
+from agenticos.security.sqlite_storage import (
+    harden_sqlite_files,
+    prepare_private_sqlite_database,
+)
 
 
 @dataclass(frozen=True)
@@ -13,6 +21,10 @@ class AuditEvent:
     resource: str
     outcome: str
     occurred_at: str
+
+
+class AuditIntegrityError(RuntimeError):
+    """Raised when the persisted audit chain cannot be verified."""
 
 
 class AuditLog:
@@ -44,37 +56,98 @@ class AuditLog:
 
 
 class SQLiteAuditLog:
-    """Append-only SQLite audit event store with bounded ordered reads."""
+    """Append-only HMAC-chained audit store.
 
-    def __init__(self, database_path: Path | str, *, max_events: int = 10_000) -> None:
+    The HMAC key must be supplied by the operator and stored outside this database.
+    To detect deletion of the newest rows, callers must retain the returned chain
+    head in an independent trusted location and pass it to verify_integrity().
+    """
+
+    _GENESIS = "0" * 64
+
+    def __init__(
+        self,
+        database_path: Path | str,
+        *,
+        signing_key: bytes,
+        max_events: int = 10_000,
+    ) -> None:
         if max_events < 1:
             raise ValueError("max_events must be at least 1")
-        self.database_path = Path(database_path)
-        self.database_path.parent.mkdir(parents=True, exist_ok=True)
+        if not isinstance(signing_key, bytes) or len(signing_key) < 32:
+            raise ValueError("Audit signing key must contain at least 32 bytes")
+        self.database_path = prepare_private_sqlite_database(database_path)
+        self._signing_key = signing_key
         self.max_events = max_events
         with self._connect() as connection:
             connection.execute(
                 """
-                CREATE TABLE IF NOT EXISTS security_audit_events (
-                    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                CREATE TABLE IF NOT EXISTS security_audit_chain_events (
+                    sequence INTEGER PRIMARY KEY,
                     principal_id TEXT NOT NULL,
                     action TEXT NOT NULL,
                     resource TEXT NOT NULL,
                     outcome TEXT NOT NULL,
-                    occurred_at TEXT NOT NULL
+                    occurred_at TEXT NOT NULL,
+                    previous_digest TEXT NOT NULL,
+                    event_digest TEXT NOT NULL UNIQUE
                 )
+                """
+            )
+            connection.executescript(
+                """
+                CREATE TRIGGER IF NOT EXISTS audit_chain_no_update
+                BEFORE UPDATE ON security_audit_chain_events
+                BEGIN SELECT RAISE(ABORT, 'audit events are append-only'); END;
+                CREATE TRIGGER IF NOT EXISTS audit_chain_no_delete
+                BEFORE DELETE ON security_audit_chain_events
+                BEGIN SELECT RAISE(ABORT, 'audit events are append-only'); END;
                 """
             )
 
     def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.database_path, timeout=10.0)
+        connection = sqlite3.connect(self.database_path, timeout=10.0)
+        try:
+            harden_sqlite_files(self.database_path)
+        except Exception:
+            connection.close()
+            raise
+        return connection
+
+    @staticmethod
+    def _canonical_payload(
+        sequence: int,
+        principal_id: str,
+        action: str,
+        resource: str,
+        outcome: str,
+        occurred_at: str,
+        previous_digest: str,
+    ) -> bytes:
+        return json.dumps(
+            {
+                "sequence": sequence,
+                "principal_id": principal_id,
+                "action": action,
+                "resource": resource,
+                "outcome": outcome,
+                "occurred_at": occurred_at,
+                "previous_digest": previous_digest,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+
+    def _digest(self, payload: bytes) -> str:
+        return hmac.new(self._signing_key, payload, hashlib.sha256).hexdigest()
 
     def record(
         self, principal_id: str, action: str, resource: str, outcome: str
     ) -> AuditEvent:
         values = (principal_id, action, resource, outcome)
-        if any(not value.strip() for value in values):
-            raise ValueError("audit event fields must be non-empty")
+        if any(not isinstance(value, str) or not value.strip() for value in values):
+            raise ValueError("audit event fields must be non-empty strings")
         event = AuditEvent(
             principal_id=principal_id,
             action=action,
@@ -83,18 +156,41 @@ class SQLiteAuditLog:
             occurred_at=datetime.now(UTC).isoformat(),
         )
         with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            previous = connection.execute(
+                """
+                SELECT sequence, event_digest
+                FROM security_audit_chain_events ORDER BY sequence DESC LIMIT 1
+                """
+            ).fetchone()
+            sequence = 1 if previous is None else previous[0] + 1
+            previous_digest = self._GENESIS if previous is None else previous[1]
+            payload = self._canonical_payload(
+                sequence,
+                event.principal_id,
+                event.action,
+                event.resource,
+                event.outcome,
+                event.occurred_at,
+                previous_digest,
+            )
+            event_digest = self._digest(payload)
             connection.execute(
                 """
-                INSERT INTO security_audit_events
-                    (principal_id, action, resource, outcome, occurred_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO security_audit_chain_events
+                    (sequence, principal_id, action, resource, outcome, occurred_at,
+                     previous_digest, event_digest)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
+                    sequence,
                     event.principal_id,
                     event.action,
                     event.resource,
                     event.outcome,
                     event.occurred_at,
+                    previous_digest,
+                    event_digest,
                 ),
             )
         return event
@@ -107,10 +203,65 @@ class SQLiteAuditLog:
             rows = connection.execute(
                 """
                 SELECT principal_id, action, resource, outcome, occurred_at
-                FROM security_audit_events
-                ORDER BY event_id DESC
-                LIMIT ?
+                FROM (
+                    SELECT sequence, principal_id, action, resource, outcome, occurred_at
+                    FROM security_audit_chain_events ORDER BY sequence DESC LIMIT ?
+                ) ORDER BY sequence ASC
                 """,
                 (read_limit,),
             ).fetchall()
-        return tuple(AuditEvent(*row) for row in reversed(rows))
+        return tuple(AuditEvent(*row) for row in rows)
+
+    def chain_head(self) -> str:
+        """Return the current chain head for storage in an independent trusted system."""
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT event_digest FROM security_audit_chain_events
+                ORDER BY sequence DESC LIMIT 1
+                """
+            ).fetchone()
+        return self._GENESIS if row is None else str(row[0])
+
+    def verify_integrity(self, *, expected_head: str | None = None) -> bool:
+        """Verify every link and optionally compare against an external checkpoint."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT sequence, principal_id, action, resource, outcome, occurred_at,
+                       previous_digest, event_digest
+                FROM security_audit_chain_events ORDER BY sequence ASC
+                """
+            ).fetchall()
+        previous_digest = self._GENESIS
+        for expected_sequence, row in enumerate(rows, start=1):
+            (
+                sequence,
+                principal_id,
+                action,
+                resource,
+                outcome,
+                occurred_at,
+                stored_previous,
+                stored_digest,
+            ) = row
+            if sequence != expected_sequence or stored_previous != previous_digest:
+                raise AuditIntegrityError("Audit sequence or previous-event link is invalid")
+            payload = self._canonical_payload(
+                sequence,
+                principal_id,
+                action,
+                resource,
+                outcome,
+                occurred_at,
+                stored_previous,
+            )
+            calculated = self._digest(payload)
+            if not hmac.compare_digest(calculated, stored_digest):
+                raise AuditIntegrityError("Audit event authentication failed")
+            previous_digest = stored_digest
+        if expected_head is not None and not hmac.compare_digest(
+            previous_digest, expected_head
+        ):
+            raise AuditIntegrityError("Audit chain head differs from trusted checkpoint")
+        return True
