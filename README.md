@@ -36,7 +36,7 @@ ollama pull qwen2.5-coder:3b
 ```bash
 git clone https://github.com/poojabhavsar28/AgenticOS.git
 cd AgenticOS
-git switch feature/phase-3-memory
+# Optional: switch to the latest Phase 14 development snapshot\ngit switch feature/phase-14-sandboxed-execution
 python -m venv .venv
 ```
 
@@ -83,4 +83,4 @@ pytest -q
 
 ## Current limitations
 
-This remains a development foundation, not a production-safe autonomous coding environment. Multi-user identity lifecycle, token rotation/revocation, tamper-evident audit storage, and a production sandbox backend are not implemented. The security policy still uses in-memory grants and does not yet bind fine-grained per-workspace permissions to multiple users. Execution limit settings are contracts for a future backend, not OS-enforced controls. Staged workspace changes require explicit approval, but approval is available only to the configured single operator when API authentication is enabled. Session identifiers are not authentication credentials. Repository indexing is explicit and bounded; hidden, binary, oversized, and dependency/cache files are skipped. Search is local keyword/SQLite FTS5, not semantic retrieval, and the index must be refreshed after file changes. Retrieved repository text and project notes are untrusted reference material. Workspace path validation alone is not an operating-system sandbox. Review generated code before use.
+This remains a development foundation, not a production-certified autonomous coding environment. The opt-in Docker sandbox now enforces container-level resource and isolation controls, but it trusts the Docker daemon and host kernel and is not a guarantee against runtime or kernel escapes. Multi-user identity lifecycle, token rotation/revocation, tamper-evident audit storage, and fine-grained per-workspace authorization are not implemented. The permission policy still uses in-memory grants. Human approval is limited to configured operator identities; it is not a multi-user identity system. Session identifiers are not authentication credentials. Repository indexing is explicit and bounded; hidden, binary, oversized, and dependency/cache files are skipped. Search is local keyword/SQLite FTS5, not semantic retrieval, and the index must be refreshed after file changes. Retrieved repository text and project notes are untrusted reference material. Workspace path validation alone is not an operating-system sandbox. Review generated code before use.
