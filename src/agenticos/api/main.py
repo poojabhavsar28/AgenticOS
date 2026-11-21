@@ -4,6 +4,7 @@
 
 import asyncio
 import json
+import sqlite3
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
@@ -302,7 +303,6 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except Exception as exc:
             # Duplicate IDs are conflicts; do not leak database details.
-            import sqlite3
             if isinstance(exc, sqlite3.IntegrityError):
                 raise HTTPException(status_code=409, detail="Principal already exists") from exc
             raise
