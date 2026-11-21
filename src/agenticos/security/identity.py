@@ -131,7 +131,7 @@ class SQLiteIdentityStore:
             )
 
     def authenticate(self, token: str | None) -> AuthenticatedPrincipal | None:
-        if not isinstance(token, str) or not token.startswith("agx_"):
+        if not isinstance(token, str) or not token:
             return None
         supplied = hashlib.sha256(token.encode("utf-8")).digest()
         match: str | None = None
