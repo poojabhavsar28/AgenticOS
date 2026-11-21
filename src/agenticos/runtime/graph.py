@@ -39,13 +39,14 @@ class CodingWorkflow:
         self.graph = graph.compile()
 
     async def execute_tool(
-        self, name: str, arguments: dict[str, object], *, principal_id: str
+        self, name: str, arguments: dict[str, object], *, principal_id: str,
+        workspace_id: str = "default",
     ) -> dict[str, object]:
         """Execute an explicitly requested tool through the permission-checked registry."""
         if self.tool_registry is None:
             raise RuntimeError("Agent tools are not configured")
         return await self.tool_registry.execute(
-            name, arguments, principal_id=principal_id
+            name, arguments, principal_id=principal_id, workspace_id=workspace_id
         )
 
     def _emit(
