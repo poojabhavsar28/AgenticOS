@@ -5,9 +5,9 @@ defense in depth, not a guarantee against container-runtime or kernel escapes.
 """
 
 import asyncio
+import re
 import tempfile
 import uuid
-import re
 from pathlib import Path
 
 from agenticos.security.sandbox import (
