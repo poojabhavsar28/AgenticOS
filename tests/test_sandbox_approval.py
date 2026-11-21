@@ -16,43 +16,45 @@ def make_manager(tmp_path):
 def test_approval_is_bound_to_exact_request_and_consumed_once(tmp_path):
     manager = make_manager(tmp_path)
     request = SandboxExecutionRequest(source="print('hello')")
-    approval_id = manager.request("agent-1", request)
+    approval = manager.request("agent-1", request)
+    review_id, token = approval["review_id"], approval["approval_token"]
 
-    manager.approve(approval_id, "human-admin")
-    manager.consume(approval_id, "agent-1", request)
+    manager.approve(review_id, "human-admin")
+    manager.consume(token, "agent-1", request)
 
     with pytest.raises(ApprovalError, match="valid, matching"):
-        manager.consume(approval_id, "agent-1", request)
+        manager.consume(review_id, "agent-1", request)
 
 
 def test_approval_rejects_changed_source_or_limits(tmp_path):
     manager = make_manager(tmp_path)
     request = SandboxExecutionRequest(source="print('hello')")
-    approval_id = manager.request("agent-1", request)
-    manager.approve(approval_id, "human-admin")
+    approval = manager.request("agent-1", request)
+    review_id, token = approval["review_id"], approval["approval_token"]
+    manager.approve(review_id, "human-admin")
 
     changed = SandboxExecutionRequest(
         source="print('changed')", limits=SandboxLimits(timeout_seconds=10)
     )
     with pytest.raises(ApprovalError):
-        manager.consume(approval_id, "agent-1", changed)
+        manager.consume(token, "agent-1", changed)
 
 
 def test_requester_cannot_approve_own_execution(tmp_path):
     manager = make_manager(tmp_path)
     request = SandboxExecutionRequest(source="pass")
-    approval_id = manager.request("human-admin", request)
+    review_id = manager.request("human-admin", request)["review_id"]
 
     with pytest.raises(ApprovalError, match="cannot approve their own"):
-        manager.approve(approval_id, "human-admin")
+        manager.approve(review_id, "human-admin")
 
 
 def test_unapproved_principal_cannot_approve(tmp_path):
     manager = make_manager(tmp_path)
-    approval_id = manager.request("agent-1", SandboxExecutionRequest(source="pass"))
+    review_id = manager.request("agent-1", SandboxExecutionRequest(source="pass"))["review_id"]
 
     with pytest.raises(ApprovalError, match="not authorized"):
-        manager.approve(approval_id, "agent-2")
+        manager.approve(review_id, "agent-2")
 
 
 def test_approval_expires(tmp_path, monkeypatch):
@@ -62,21 +64,22 @@ def test_approval_expires(tmp_path, monkeypatch):
     monkeypatch.setattr(approval_module.time, "time", lambda: now[0])
     manager = make_manager(tmp_path)
     request = SandboxExecutionRequest(source="pass")
-    approval_id = manager.request("agent-1", request, ttl_seconds=2)
+    review_id = manager.request("agent-1", request, ttl_seconds=2)["review_id"]
     now[0] = 1003.0
 
     with pytest.raises(ApprovalError, match="expired"):
-        manager.approve(approval_id, "human-admin")
+        manager.approve(review_id, "human-admin")
 
 
 def test_approval_token_is_not_reusable_for_another_requester(tmp_path):
     manager = make_manager(tmp_path)
     request = SandboxExecutionRequest(source="pass")
-    approval_id = manager.request("agent-1", request)
-    manager.approve(approval_id, "human-admin")
+    approval = manager.request("agent-1", request)
+    review_id, token = approval["review_id"], approval["approval_token"]
+    manager.approve(review_id, "human-admin")
 
     with pytest.raises(ApprovalError):
-        manager.consume(approval_id, "agent-2", request)
+        manager.consume(token, "agent-2", request)
 
 
 def test_approval_lifetime_is_bounded(tmp_path):
@@ -88,15 +91,38 @@ def test_approval_lifetime_is_bounded(tmp_path):
 def test_review_source_is_cleared_after_approval(tmp_path):
     manager = make_manager(tmp_path)
     request = SandboxExecutionRequest(source="print('sensitive review source')")
-    approval_id = manager.request("agent-1", request)
+    review_id = manager.request("agent-1", request)["review_id"]
 
-    pending = manager.get_review(approval_id)
+    pending = manager.get_review(review_id)
     assert pending is not None
     assert pending["request"]["source"] == "print('sensitive review source')"
 
-    manager.approve(approval_id, "human-admin")
-    approved = manager.get_review(approval_id)
+    manager.approve(review_id, "human-admin")
+    approved = manager.get_review(review_id)
     assert approved is not None
     assert approved["status"] == "approved"
     assert approved["request"] is None
     assert approved["request_hash"] == manager.store.fingerprint(request)
+
+
+
+def test_raw_approval_token_is_never_persisted(tmp_path):
+    import sqlite3
+
+    database = tmp_path / "approvals.sqlite3"
+    manager = HumanApprovalManager(
+        SQLiteExecutionApprovalStore(database), allowed_approvers={"human-admin"}
+    )
+    approval = manager.request("agent-1", SandboxExecutionRequest(source="pass"))
+    token = approval["approval_token"]
+    review_id = approval["review_id"]
+
+    with sqlite3.connect(database) as connection:
+        row = connection.execute(
+            "SELECT approval_id, public_id FROM sandbox_execution_approvals"
+        ).fetchone()
+
+    assert token not in row
+    assert row[0] == manager.store._approval_digest(token)
+    assert row[1] == review_id
+    assert len(review_id) == 32
