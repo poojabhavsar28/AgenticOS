@@ -3,7 +3,11 @@ import sqlite3
 import pytest
 
 from agenticos.security import AuditLog
-from agenticos.security.audit import (\n    AuditIntegrityError,\n    SQLiteAuditLog,\n    load_or_create_audit_key,\n)
+from agenticos.security.audit import (
+    AuditIntegrityError,
+    SQLiteAuditLog,
+    load_or_create_audit_key,
+)
 
 
 KEY = b"test-audit-signing-key-material-32-bytes!!"
