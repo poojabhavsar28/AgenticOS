@@ -8,6 +8,7 @@ import secrets
 import sqlite3
 import time
 from pathlib import Path
+from uuid import uuid4
 
 from agenticos.security.sandbox import SandboxExecutionRequest
 
@@ -17,7 +18,7 @@ class ApprovalError(PermissionError):
 
 
 class SQLiteExecutionApprovalStore:
-    """SQLite-backed approvals with short-lived source retained only for human review."""
+    """SQLite-backed approvals; only the one-time credential digest is persisted."""
 
     def __init__(self, database_path: Path | str) -> None:
         self.database_path = Path(database_path)
@@ -39,15 +40,34 @@ class SQLiteExecutionApprovalStore:
                 )
                 """
             )
-            columns = {row["name"] for row in connection.execute("PRAGMA table_info(sandbox_execution_approvals)").fetchall()}
+            columns = {row["name"] for row in connection.execute(
+                "PRAGMA table_info(sandbox_execution_approvals)"
+            ).fetchall()}
             if "public_id" not in columns:
-                connection.execute("ALTER TABLE sandbox_execution_approvals ADD COLUMN public_id TEXT")
+                connection.execute(
+                    "ALTER TABLE sandbox_execution_approvals ADD COLUMN public_id TEXT"
+                )
             if "request_json" not in columns:
-                connection.execute("ALTER TABLE sandbox_execution_approvals ADD COLUMN request_json TEXT")
+                connection.execute(
+                    "ALTER TABLE sandbox_execution_approvals ADD COLUMN request_json TEXT"
+                )
+            # Revoke legacy records whose public_id contains the former bearer token.
+            # New review IDs are 32-character UUID hex strings.
+            connection.execute(
+                """UPDATE sandbox_execution_approvals
+                   SET public_id = lower(hex(randomblob(16))),
+                       status = 'revoked', request_json = NULL
+                   WHERE public_id IS NOT NULL AND length(public_id) > 32"""
+            )
+            connection.execute(
+                """UPDATE sandbox_execution_approvals
+                   SET public_id = lower(hex(randomblob(16))),
+                       status = 'revoked', request_json = NULL
+                   WHERE public_id IS NULL"""
+            )
         try:
             self.database_path.chmod(0o600)
         except OSError:
-            # Windows ACLs are managed by the host; deployment docs require a private data dir.
             pass
 
     def _connect(self) -> sqlite3.Connection:
@@ -56,8 +76,8 @@ class SQLiteExecutionApprovalStore:
         return connection
 
     @staticmethod
-    def _approval_digest(approval_id: str) -> str:
-        return hashlib.sha256(approval_id.encode("utf-8")).hexdigest()
+    def _approval_digest(token: str) -> str:
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
     @staticmethod
     def fingerprint(request: SandboxExecutionRequest) -> str:
@@ -68,13 +88,14 @@ class SQLiteExecutionApprovalStore:
 
     def create(
         self, requester_id: str, request: SandboxExecutionRequest, *, ttl_seconds: int
-    ) -> str:
+    ) -> dict[str, str]:
         if not requester_id.strip():
             raise ValueError("Requester identity must be non-empty")
         if not 1 <= ttl_seconds <= 900:
             raise ValueError("Approval lifetime must be between 1 and 900 seconds")
         now = time.time()
-        approval_id = secrets.token_urlsafe(32)
+        review_id = uuid4().hex
+        approval_token = secrets.token_urlsafe(32)
         with self._connect() as connection:
             connection.execute(
                 """
@@ -84,8 +105,8 @@ class SQLiteExecutionApprovalStore:
                 VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
                 """,
                 (
-                    self._approval_digest(approval_id),
-                    approval_id,
+                    self._approval_digest(approval_token),
+                    review_id,
                     requester_id,
                     self.fingerprint(request),
                     json.dumps(request.model_dump(mode="json"), sort_keys=True, separators=(",", ":")),
@@ -93,18 +114,23 @@ class SQLiteExecutionApprovalStore:
                     now + ttl_seconds,
                 ),
             )
-        return approval_id
+        return {"review_id": review_id, "approval_token": approval_token}
 
     def list_pending(self) -> list[dict[str, object]]:
-        """Return pending review records for the authenticated approver."""
         now = time.time()
         with self._connect() as connection:
             connection.execute(
-                "UPDATE sandbox_execution_approvals SET status = 'expired', request_json = NULL WHERE status = 'pending' AND expires_at <= ?",
+                """UPDATE sandbox_execution_approvals
+                   SET status = 'expired', request_json = NULL
+                   WHERE status = 'pending' AND expires_at <= ?""",
                 (now,),
             )
             rows = connection.execute(
-                "SELECT public_id, requester_id, request_hash, request_json, created_at, expires_at, status FROM sandbox_execution_approvals WHERE status = 'pending' AND expires_at > ? AND request_json IS NOT NULL ORDER BY created_at ASC LIMIT 100",
+                """SELECT public_id, requester_id, request_hash, request_json,
+                          created_at, expires_at, status
+                   FROM sandbox_execution_approvals
+                   WHERE status = 'pending' AND expires_at > ?
+                     AND request_json IS NOT NULL ORDER BY created_at ASC LIMIT 100""",
                 (now,),
             ).fetchall()
         return [
@@ -112,32 +138,37 @@ class SQLiteExecutionApprovalStore:
             for row in rows
         ]
 
-    def get_review(self, approval_id: str) -> dict[str, object] | None:
-        """Return a review record and clear code if the approval has expired."""
+    def get_review(self, review_id: str) -> dict[str, object] | None:
         now = time.time()
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT public_id, requester_id, request_hash, request_json, created_at, expires_at, status FROM sandbox_execution_approvals WHERE approval_id = ?",
-                (self._approval_digest(approval_id),),
+                """SELECT public_id, requester_id, request_hash, request_json,
+                          created_at, expires_at, status
+                   FROM sandbox_execution_approvals WHERE public_id = ?""",
+                (review_id,),
             ).fetchone()
             if row is None:
                 return None
             if row["expires_at"] <= now and row["request_json"] is not None:
                 connection.execute(
-                    "UPDATE sandbox_execution_approvals SET status = 'expired', request_json = NULL WHERE approval_id = ? AND status IN ('pending', 'approved')",
-                    (self._approval_digest(approval_id),),
+                    """UPDATE sandbox_execution_approvals
+                       SET status = 'expired', request_json = NULL
+                       WHERE public_id = ? AND status IN ('pending', 'approved')""",
+                    (review_id,),
                 )
                 row = connection.execute(
-                    "SELECT public_id, requester_id, request_hash, request_json, created_at, expires_at, status FROM sandbox_execution_approvals WHERE approval_id = ?",
-                    (self._approval_digest(approval_id),),
+                    """SELECT public_id, requester_id, request_hash, request_json,
+                              created_at, expires_at, status
+                       FROM sandbox_execution_approvals WHERE public_id = ?""",
+                    (review_id,),
                 ).fetchone()
         return self._review_record(row)
 
     @staticmethod
     def _review_record(row: sqlite3.Row) -> dict[str, object]:
         return {
-            "approval_id": row["public_id"],
+            "review_id": row["public_id"],
             "requester_id": row["requester_id"],
             "request_hash": row["request_hash"],
             "request": json.loads(row["request_json"]) if row["request_json"] else None,
@@ -147,7 +178,7 @@ class SQLiteExecutionApprovalStore:
         }
 
     def approve(
-        self, approval_id: str, approver_id: str, *, allowed_approvers: frozenset[str]
+        self, review_id: str, approver_id: str, *, allowed_approvers: frozenset[str]
     ) -> None:
         if not approver_id or approver_id not in allowed_approvers:
             raise ApprovalError("Principal is not authorized to approve sandbox execution")
@@ -156,8 +187,8 @@ class SQLiteExecutionApprovalStore:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 """SELECT requester_id, status, expires_at
-                   FROM sandbox_execution_approvals WHERE approval_id = ?""",
-                (self._approval_digest(approval_id),),
+                   FROM sandbox_execution_approvals WHERE public_id = ?""",
+                (review_id,),
             ).fetchone()
             if row is None or row["status"] != "pending" or row["expires_at"] <= now:
                 raise ApprovalError("Approval is missing, expired, or no longer pending")
@@ -166,44 +197,43 @@ class SQLiteExecutionApprovalStore:
             updated = connection.execute(
                 """UPDATE sandbox_execution_approvals
                    SET status = 'approved', approver_id = ?, request_json = NULL
-                   WHERE approval_id = ? AND status = 'pending' AND expires_at > ?""",
-                (approver_id, self._approval_digest(approval_id), now),
+                   WHERE public_id = ? AND status = 'pending' AND expires_at > ?""",
+                (approver_id, review_id, now),
             )
             if updated.rowcount != 1:
                 raise ApprovalError("Approval could not be applied")
 
     def consume(
-        self, approval_id: str, requester_id: str, request: SandboxExecutionRequest
+        self, approval_token: str, requester_id: str, request: SandboxExecutionRequest
     ) -> None:
         now = time.time()
+        digest = self._approval_digest(approval_token)
         request_hash = self.fingerprint(request)
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 """SELECT requester_id, request_hash, status, expires_at
                    FROM sandbox_execution_approvals WHERE approval_id = ?""",
-                (self._approval_digest(approval_id),),
+                (digest,),
             ).fetchone()
             if (
-                row is None
-                or row["requester_id"] != requester_id
+                row is None or row["requester_id"] != requester_id
                 or row["request_hash"] != request_hash
-                or row["status"] != "approved"
-                or row["expires_at"] <= now
+                or row["status"] != "approved" or row["expires_at"] <= now
             ):
                 raise ApprovalError("A valid, matching, unused human approval is required")
             updated = connection.execute(
                 """UPDATE sandbox_execution_approvals
                    SET status = 'consumed', consumed_at = ?, request_json = NULL
                    WHERE approval_id = ? AND status = 'approved' AND expires_at > ?""",
-                (now, self._approval_digest(approval_id), now),
+                (now, digest, now),
             )
             if updated.rowcount != 1:
                 raise ApprovalError("Approval has already been consumed")
 
 
 class HumanApprovalManager:
-    """Expose request/approve/consume operations around the persistent store."""
+    """Expose request/review/approve/consume operations around the persistent store."""
 
     def __init__(
         self, store: SQLiteExecutionApprovalStore, *, allowed_approvers: set[str]
@@ -215,26 +245,19 @@ class HumanApprovalManager:
 
     def request(
         self, requester_id: str, request: SandboxExecutionRequest, *, ttl_seconds: int = 300
-    ) -> str:
-        """Create a pending approval bound to this exact request."""
+    ) -> dict[str, str]:
         return self.store.create(requester_id, request, ttl_seconds=ttl_seconds)
 
     def list_pending(self) -> list[dict[str, object]]:
-        """List pending code-review requests for the approval UI."""
         return self.store.list_pending()
 
-    def get_review(self, approval_id: str) -> dict[str, object] | None:
-        """Read one request for human inspection before approval."""
-        return self.store.get_review(approval_id)
+    def get_review(self, review_id: str) -> dict[str, object] | None:
+        return self.store.get_review(review_id)
 
-    def approve(self, approval_id: str, approver_id: str) -> None:
-        """Approve only when called as an allowlisted, distinct human principal."""
-        self.store.approve(
-            approval_id, approver_id, allowed_approvers=self.allowed_approvers
-        )
+    def approve(self, review_id: str, approver_id: str) -> None:
+        self.store.approve(review_id, approver_id, allowed_approvers=self.allowed_approvers)
 
     def consume(
-        self, approval_id: str, requester_id: str, request: SandboxExecutionRequest
+        self, approval_token: str, requester_id: str, request: SandboxExecutionRequest
     ) -> None:
-        """Atomically consume approval once, only for the exact requester and request."""
-        self.store.consume(approval_id, requester_id, request)
+        self.store.consume(approval_token, requester_id, request)
