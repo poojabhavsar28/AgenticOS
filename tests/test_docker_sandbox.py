@@ -100,9 +100,7 @@ async def test_docker_backend_kills_timed_out_container_and_cleans_up() -> None:
 
     assert result.timed_out is True
     assert ("kill", "a" * 64) in backend.commands
-    assert backend.commands[-1] == ("rm", "--force",
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    )
+    assert backend.commands[-1] == ("rm", "--force", "a" * 64)
 
 
 @pytest.mark.asyncio
@@ -115,7 +113,7 @@ async def test_docker_backend_cleans_up_when_execution_is_cancelled() -> None:
             if arguments[0] == "create":
                 return 0, b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n", b""
             if arguments[:2] == ("ps", "--all"):
-                return 0, b"a" * 64 + b"\\n", b""
+                return 0, b"a" * 64 + bytes([10]), b""
             if arguments[0] == "wait":
                 raise asyncio.CancelledError
             return 0, b"", b""
