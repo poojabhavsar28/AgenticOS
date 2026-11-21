@@ -64,8 +64,11 @@ async def test_docker_backend_applies_hardening_and_cleans_container() -> None:
         "--log-opt",
     ):
         assert flag in create
-    assert backend.commands[-1] == ("rm", "--force",
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    assert backend.commands[-2][:2] == ("ps", "--all")
+    assert backend.commands[-1] == (
+        "rm",
+        "--force",
+        "a" * 64,
     )
 
 
@@ -111,6 +114,8 @@ async def test_docker_backend_cleans_up_when_execution_is_cancelled() -> None:
                 return 0, b"", b""
             if arguments[0] == "create":
                 return 0, b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n", b""
+            if arguments[:2] == ("ps", "--all"):
+                return 0, b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\n", b""
             if arguments[0] == "wait":
                 raise asyncio.CancelledError
             return 0, b"", b""
