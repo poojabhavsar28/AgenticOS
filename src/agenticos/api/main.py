@@ -48,6 +48,7 @@ from agenticos.security.policy import (
     PermissionDenied,
     PermissionPolicy,
 )
+from agenticos.security.sqlite_storage import prepare_private_sqlite_database
 from agenticos.security.sandbox import (
     SandboxExecutionRequest,
     sandbox_policy_from_settings,
@@ -136,6 +137,11 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         if config.api_auth_token
         else None
     )
+    # Runtime and security stores share dedicated SQLite paths. Prepare both
+    # before any store opens them so directories, databases and sidecars inherit
+    # restrictive permissions from the first write.
+    prepare_private_sqlite_database(config.operations_database_path)
+    prepare_private_sqlite_database(config.memory_database_path)
     configure_logging(config.log_level)
     logger = get_logger(__name__)
     model = model_client or OllamaClient(
