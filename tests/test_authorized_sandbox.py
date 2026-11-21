@@ -42,9 +42,9 @@ def make_approval(tmp_path, request):
         SQLiteExecutionApprovalStore(tmp_path / "approvals.sqlite3"),
         allowed_approvers={"human-admin"},
     )
-    approval_id = approvals.request("agent-1", request)
-    approvals.approve(approval_id, "human-admin")
-    return approvals, approval_id
+    approval = approvals.request("agent-1", request)
+    approvals.approve(approval["review_id"], "human-admin")
+    return approvals, approval["approval_token"]
 
 
 def make_executor(backend, audit, approvals, *, allowed=True):
@@ -64,7 +64,7 @@ async def test_authorized_execution_records_completion_without_source(tmp_path) 
     approvals, approval_id = make_approval(tmp_path, request)
     executor = make_executor(backend, audit, approvals)
 
-    result = await executor.execute("agent-1", request, approval_id=approval_id)
+    result = await executor.execute("agent-1", request, approval_token=approval_id)
 
     assert result.stdout == "safe output"
     assert backend.calls == 1
@@ -82,7 +82,7 @@ async def test_unauthorized_execution_is_denied_and_audited(tmp_path) -> None:
     executor = make_executor(backend, audit, approvals, allowed=False)
 
     with pytest.raises(PermissionDenied):
-        await executor.execute("agent-1", request, approval_id=approval_id)
+        await executor.execute("agent-1", request, approval_token=approval_id)
 
     assert backend.calls == 0
     assert [event.outcome for event in audit.events()] == ["denied"]
@@ -115,7 +115,7 @@ async def test_failed_execution_is_audited_and_reraised(tmp_path) -> None:
     executor = make_executor(backend, audit, approvals)
 
     with pytest.raises(RuntimeError, match="backend failed"):
-        await executor.execute("agent-1", request, approval_id=approval_id)
+        await executor.execute("agent-1", request, approval_token=approval_id)
 
     assert [event.outcome for event in audit.events()] == ["started", "failed"]
 
@@ -128,7 +128,7 @@ async def test_timed_out_execution_has_distinct_audit_outcome(tmp_path) -> None:
     approvals, approval_id = make_approval(tmp_path, request)
     executor = make_executor(backend, audit, approvals)
 
-    await executor.execute("agent-1", request, approval_id=approval_id)
+    await executor.execute("agent-1", request, approval_token=approval_id)
 
     assert [event.outcome for event in audit.events()] == ["started", "timed_out"]
 
@@ -143,7 +143,7 @@ async def test_authorized_execution_supports_persistent_sqlite_audit(tmp_path) -
     approvals, approval_id = make_approval(tmp_path, request)
     executor = make_executor(backend, audit, approvals)
 
-    await executor.execute("agent-1", request, approval_id=approval_id)
+    await executor.execute("agent-1", request, approval_token=approval_id)
 
     reopened = SQLiteAuditLog(tmp_path / "security-audit.sqlite3")
     events = reopened.events()
@@ -162,7 +162,7 @@ async def test_audit_store_failure_fails_closed_before_execution(tmp_path) -> No
     executor = make_executor(backend, UnavailableAudit(), approvals)
 
     with pytest.raises(OSError, match="audit database unavailable"):
-        await executor.execute("agent-1", request, approval_id=approval_id)
+        await executor.execute("agent-1", request, approval_token=approval_id)
 
     assert backend.calls == 0
 
@@ -186,7 +186,7 @@ async def test_completion_audit_failure_preserves_result_and_warns_against_retry
     executor = make_executor(backend, audit, approvals)
 
     with pytest.raises(AuditCompletionError, match="do not retry automatically") as exc_info:
-        await executor.execute("agent-1", request, approval_id=approval_id)
+        await executor.execute("agent-1", request, approval_token=approval_id)
 
     assert backend.calls == 1
     assert exc_info.value.result.stdout == "safe output"
