@@ -138,8 +138,14 @@ class DockerSandboxBackend:
             timed_out = False
             exit_code = 1
             try:
-                start_status, _, _ = await self._docker("start", container_id)
+                start_status, _, start_error = await self._docker("start", container_id)
                 if start_status != 0:
+                    detail = start_error.decode("utf-8", errors="replace").strip()
+                    if detail:
+                        detail = detail[:1000]
+                        raise DockerSandboxError(
+                            "Docker failed to start the sandbox container: " + detail
+                        )
                     raise DockerSandboxError("Docker failed to start the sandbox container")
                 try:
                     wait_status, wait_out, _ = await self._docker(
