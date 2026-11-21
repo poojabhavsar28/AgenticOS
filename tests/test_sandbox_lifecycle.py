@@ -57,16 +57,18 @@ def test_agent_to_human_approval_to_sandbox_execution_lifecycle(
             json={"request": request},
         )
         assert submitted.status_code == 200
-        approval_id = submitted.json()["approval_id"]
+        submission = submitted.json()
+        review_id = submission["review_id"]
+        approval_token = submission["approval_token"]
         assert submitted.json()["status"] == "pending_human_review"
         assert StubDockerSandboxBackend.calls == 0
 
         # Only the separately authenticated reviewer can inspect the submitted source.
         queue = client.get("/v1/sandbox/reviews", headers=reviewer_headers)
         assert queue.status_code == 200
-        assert [item["approval_id"] for item in queue.json()] == [approval_id]
+        assert [item["review_id"] for item in queue.json()] == [approval_id]
         review = client.get(
-            f"/v1/sandbox/reviews/{approval_id}", headers=reviewer_headers
+            f"/v1/sandbox/reviews/{review_id}", headers=reviewer_headers
         )
         assert review.status_code == 200
         assert review.json()["request"]["source"] == source
@@ -74,7 +76,7 @@ def test_agent_to_human_approval_to_sandbox_execution_lifecycle(
 
         # The human approval is a distinct action from requesting execution.
         approved = client.post(
-            f"/v1/sandbox/approvals/{approval_id}/approve",
+            f"/v1/sandbox/approvals/{review_id}/approve",
             headers=reviewer_headers,
         )
         assert approved.status_code == 200
@@ -85,7 +87,7 @@ def test_agent_to_human_approval_to_sandbox_execution_lifecycle(
             "/v1/tools/execute_approved_code/execute",
             headers=requester_headers,
             json={
-                "approval_id": approval_id,
+                "approval_token": approval_token,
                 "request": {"source": "print('tampered source')"},
             },
         )
@@ -96,7 +98,7 @@ def test_agent_to_human_approval_to_sandbox_execution_lifecycle(
         executed = client.post(
             "/v1/tools/execute_approved_code/execute",
             headers=requester_headers,
-            json={"approval_id": approval_id, "request": request},
+            json={"approval_token": approval_token, "request": request},
         )
         assert executed.status_code == 200
         assert executed.json()["stdout"] == "stubbed sandbox output"
@@ -106,7 +108,7 @@ def test_agent_to_human_approval_to_sandbox_execution_lifecycle(
         replay = client.post(
             "/v1/tools/execute_approved_code/execute",
             headers=requester_headers,
-            json={"approval_id": approval_id, "request": request},
+            json={"approval_token": approval_token, "request": request},
         )
         assert replay.status_code == 403
         assert StubDockerSandboxBackend.calls == 1
