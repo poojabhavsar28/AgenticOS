@@ -43,6 +43,16 @@ The service identity must have modify access to create and update the SQLite dat
 
 The POSIX tests verify directory mode `0700`, database/sidecar mode `0600`, and rejection of a permissive custom directory. These checks do not establish protection against root/Administrator, filesystem snapshots, backups, or a compromised service account. Backups must inherit equivalent access restrictions.
 
+## Audit integrity implementation
+
+The SQLite audit store now writes canonical, ordered events with sequence numbers, previous-event digests, and HMAC-SHA256 event authentication. The HMAC key must be at least 32 bytes. The API creates or loads a separate 32-byte key file beside the operations database, with owner-only permissions on POSIX, and rejects symlink/non-regular key paths. SQLite update/delete triggers provide an additional accidental-mutation guard; they are not treated as the cryptographic security boundary.
+
+### Verification and truncation boundary
+
+`SQLiteAuditLog.verify_integrity()` validates sequence continuity, previous-digest links, and every event HMAC. `chain_head()` returns the latest digest. To detect deletion of the newest events (tail truncation), operators must retain that chain head in an independent trusted location and pass it as `expected_head` to verification. A self-contained SQLite file cannot prove that its own newest rows were deleted.
+
+The current key file is protected by the same private data-directory boundary as the database. This protects against other local users when filesystem permissions are correctly configured, but not against a compromised AgenticOS service account or host administrator. Production deployments should provision the HMAC key from an independent secret manager or protected key store and retain chain-head checkpoints outside the database. Key rotation, external checkpoint automation, and an operator-facing verification command/API remain follow-up work; this implementation does not claim protection against a fully compromised host.
+
 ## Scope
 
 ### 1. Identity lifecycle
