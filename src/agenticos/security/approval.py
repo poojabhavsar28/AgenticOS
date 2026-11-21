@@ -11,6 +11,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from agenticos.security.sandbox import SandboxExecutionRequest
+from agenticos.security.sqlite_storage import harden_sqlite_files, prepare_private_sqlite_database
 
 
 class ApprovalError(PermissionError):
@@ -21,8 +22,7 @@ class SQLiteExecutionApprovalStore:
     """SQLite-backed approvals; only the one-time credential digest is persisted."""
 
     def __init__(self, database_path: Path | str) -> None:
-        self.database_path = Path(database_path)
-        self.database_path.parent.mkdir(parents=True, exist_ok=True)
+        self.database_path = prepare_private_sqlite_database(database_path)
         with self._connect() as connection:
             connection.execute(
                 """
@@ -65,13 +65,13 @@ class SQLiteExecutionApprovalStore:
                        status = 'revoked', request_json = NULL
                    WHERE public_id IS NULL"""
             )
-        try:
-            self.database_path.chmod(0o600)
-        except OSError:
-            pass
-
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path, timeout=10.0)
+        try:
+            harden_sqlite_files(self.database_path)
+        except Exception:
+            connection.close()
+            raise
         connection.row_factory = sqlite3.Row
         return connection
 
