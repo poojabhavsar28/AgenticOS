@@ -273,14 +273,14 @@ def test_agent_tool_api_uses_authenticated_identity_and_human_approval(
         assert reviews.json()[0]["requester_id"] == "local-operator"
 
         review = client.get(
-            f"/v1/sandbox/reviews/{body['approval_id']}",
+            f"/v1/sandbox/reviews/{body['review_id']}",
             headers={"X-Sandbox-Approval-Token": "Bearer human-secret"},
         )
         assert review.status_code == 200
         assert review.json()["request"]["source"] == "print('hello')"
 
         approved = client.post(
-            f"/v1/sandbox/approvals/{body['approval_id']}/approve",
+            f"/v1/sandbox/approvals/{body['review_id']}/approve",
             headers={"X-Sandbox-Approval-Token": "Bearer human-secret"},
         )
         assert approved.status_code == 200
