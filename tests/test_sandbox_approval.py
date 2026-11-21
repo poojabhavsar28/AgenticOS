@@ -23,7 +23,7 @@ def test_approval_is_bound_to_exact_request_and_consumed_once(tmp_path):
     manager.consume(token, "agent-1", request)
 
     with pytest.raises(ApprovalError, match="valid, matching"):
-        manager.consume(review_id, "agent-1", request)
+        manager.consume(token, "agent-1", request)
 
 
 def test_approval_rejects_changed_source_or_limits(tmp_path):
