@@ -50,12 +50,12 @@ The container is a defense-in-depth boundary, not a guarantee against every cont
 ## Proposed implementation sequence
 
 1. **Contracts and policy:** typed request/result models, configuration, disabled-by-default policy and sandbox protocol (implemented).
-2. **Docker runner:** hardened container creation, bounded input/output, timeout and cleanup (implemented; real Docker integration tests pending).
+2. **Docker runner:** hardened container creation, bounded input/output, timeout and cleanup (implemented; real Docker integration tests verified in CI run #44914812543).
 3. **Authorization integration:** principal/action/resource permission checks and sanitized audit events (implemented in the authorized executor).
 4. **Human approval service:** persistent SQLite approval records, distinct allowlisted approver, exact-request hash binding, bounded expiry and atomic single-use consumption (implemented). The exact source is retained temporarily for review only while pending, then cleared on approval, expiry or execution; approval hashes remain for verification.
-5. **API integration:** separate requester and human-approver credentials, authenticated approval request/review endpoints, and an explicit execution endpoint (implemented; end-to-end Docker execution verification pending). The reviewer page displays the full source, SHA-256 fingerprint, requester, expiry and resource limits; the approve control stays disabled until the reviewer acknowledges inspection.
+5. **API integration:** separate requester and human-approver credentials, authenticated approval request/review endpoints, and an explicit execution endpoint (implemented; Docker-backed execution path verified by the real-container CI job). The reviewer page displays the full source, SHA-256 fingerprint, requester, expiry and resource limits; the approve control stays disabled until the reviewer acknowledges inspection.
 6. **Agent workflow integration:** register `request_code_execution` and `execute_approved_code` behind exact-match tool permissions; bind requester identity server-side; expose explicit workflow dispatch and an authenticated API route. Requesting only creates a pending human review, while execution requires the same request and a one-time human approval (implemented; CI verification in progress).
-7. **Verification and docs:** unit tests, optional Docker integration tests, security regression tests and operator documentation (in progress).
+7. **Verification and docs:** unit tests, optional Docker integration tests, security regression tests and operator documentation (implemented; see the Phase 14 security review for residual risks).
 
 Each step should be delivered as a small, focused commit. Do not merge this phase into `dev` or `main` until the phase-specific checks pass and the user explicitly approves the merge.
 
@@ -85,3 +85,16 @@ Each step should be delivered as a small, focused commit. Do not merge this phas
 The ordinary quality job deliberately runs without requiring Docker. To enable the separate real-container integration job, configure the repository Actions variable `AGENTICOS_TEST_SANDBOX_IMAGE` with an administrator-approved Python image reference pinned to a full SHA-256 digest, for example `registry.example/python@sha256:<64-lowercase-hex-digest>`.
 
 When that variable is non-empty, GitHub Actions starts the Docker integration job, pulls the configured image during CI setup, and runs `tests/test_docker_sandbox_integration.py` with `AGENTICOS_DOCKER_INTEGRATION=1`. The test backend itself still never pulls an image: it verifies that the exact configured digest reference is already present locally before creating a container. Review the image provenance and update the digest deliberately; do not use a mutable tag. Without the repository variable, this job is skipped and normal CI remains Docker-independent.
+
+
+## Verification record
+
+- Verified branch head: `d74d3b655bc0abb6fad8d45189a41b67bb161fd5`.
+- GitHub Actions run: [#44914812543](https://github.com/poojabhavsar28/AgenticOS/actions/runs/44914812543).
+- `quality`: passed, including Ruff, full pytest, and evaluation regression gate.
+- `docker-sandbox-integration`: passed, including Docker daemon verification, digest-pinned image preload, and all real-container integration tests.
+- This verifies the configured GitHub Actions Linux/Docker environment. It does not certify every developer host, Docker Desktop configuration, rootless mode, or production deployment.
+
+## Acceptance disposition
+
+**Phase 14 implementation and CI acceptance checks: passed.** Production deployment approval remains separate. The Docker daemon and host kernel are trusted; the residual risks in `docs/phase-14-security-review.md` must be addressed or explicitly accepted before enabling this capability for untrusted users or production workloads.
