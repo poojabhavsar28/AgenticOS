@@ -6,6 +6,8 @@ defense in depth, not a guarantee against container-runtime or kernel escapes.
 
 import asyncio
 import tempfile
+import uuid
+import re
 from pathlib import Path
 
 from agenticos.security.sandbox import (
@@ -55,6 +57,24 @@ class DockerSandboxBackend:
             raise DockerSandboxError("Docker command timed out") from exc
         return process.returncode or 0, stdout, stderr
 
+    async def _cleanup_invocation(self, invocation_id: str) -> None:
+        """Remove only containers carrying this execution's unique label."""
+        status, output, _ = await self._docker(
+            "ps", "--all", "--quiet", "--filter",
+            f"label=agenticos.invocation={invocation_id}", timeout=10.0
+        )
+        if status != 0:
+            raise DockerSandboxError("Unable to enumerate sandbox containers for cleanup")
+        for candidate in output.decode("ascii", errors="ignore").splitlines():
+            container_id = candidate.strip()
+            if not re.fullmatch(r"[0-9a-fA-F]{12,64}", container_id):
+                continue
+            remove_status, _, _ = await self._docker(
+                "rm", "--force", container_id, timeout=10.0
+            )
+            if remove_status != 0:
+                raise DockerSandboxError("Unable to remove an invocation-owned sandbox container")
+
     async def execute(
         self, request: SandboxExecutionRequest
     ) -> SandboxExecutionResult:
@@ -90,8 +110,11 @@ class DockerSandboxBackend:
             source_file.chmod(0o644)
             mount = f"type=bind,src={source_dir},dst=/workspace,readonly"
             limits = request.limits
+            invocation_id = uuid.uuid4().hex
             create_args = (
                 "create",
+                "--label",
+                f"agenticos.invocation={invocation_id}",
                 "--network",
                 "none",
                 "--read-only",
@@ -128,11 +151,17 @@ class DockerSandboxBackend:
                 "-B",
                 "/workspace/main.py",
             )
-            create_status, create_out, _ = await self._docker(*create_args)
+            try:
+                create_status, create_out, _ = await self._docker(*create_args)
+            except BaseException:
+                await asyncio.shield(self._cleanup_invocation(invocation_id))
+                raise
             if create_status != 0:
+                await self._cleanup_invocation(invocation_id)
                 raise DockerSandboxError("Docker refused to create the sandbox container")
-            container_id = create_out.decode("utf-8", errors="replace").strip()
-            if not container_id or len(container_id) > 128:
+            container_id = create_out.decode("ascii", errors="ignore").strip()
+            if not re.fullmatch(r"[0-9a-fA-F]{12,64}", container_id):
+                await self._cleanup_invocation(invocation_id)
                 raise DockerSandboxError("Docker returned an invalid container identifier")
 
             timed_out = False
@@ -179,4 +208,4 @@ class DockerSandboxBackend:
                     output_truncated=truncated,
                 )
             finally:
-                await self._docker("rm", "--force", container_id, timeout=10.0)
+                await self._cleanup_invocation(invocation_id)
