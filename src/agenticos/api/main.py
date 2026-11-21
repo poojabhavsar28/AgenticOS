@@ -38,6 +38,7 @@ from agenticos.security.approval import (
 )
 from agenticos.security.audit import SQLiteAuditLog, load_or_create_audit_key
 from agenticos.security.auth import BearerTokenAuthenticator
+from agenticos.security.identity import SQLiteIdentityStore
 from agenticos.security.authorized_sandbox import AuthorizedSandboxExecutor
 from agenticos.security.docker_sandbox import (
     DockerSandboxBackend,
@@ -129,14 +130,13 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         )
     if config.sandbox_enabled and config.api_auth_token == config.sandbox_approval_token:
         raise ValueError("Sandbox approval token must differ from API_AUTH_TOKEN")
-    authenticator = (
-        BearerTokenAuthenticator(
+    identity_store = SQLiteIdentityStore(config.operations_database_path)
+    authenticator = None
+    if config.api_auth_token:
+        identity_store.register_configured_token(
+            config.sandbox_execution_principal or "local-operator",
             config.api_auth_token,
-            principal_id=config.sandbox_execution_principal or "local-operator",
         )
-        if config.api_auth_token
-        else None
-    )
     # Runtime and security stores share dedicated SQLite paths. Prepare both
     # before any store opens them so directories, databases and sidecars inherit
     # restrictive permissions from the first write.
@@ -219,7 +219,8 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     app.state.memory = memory
     app.state.repository_index = repository_index
     app.state.workspace_files = workspace_files
-    app.state.authenticator = authenticator
+    app.state.authenticator = identity_store
+    app.state.identity_store = identity_store
     app.state.audit_log = audit_log
     app.state.sandbox_approvals = sandbox_approvals
     app.state.sandbox_executor = sandbox_executor
@@ -237,7 +238,13 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             and authenticator is not None
             and not is_human_approval_route
         ):
-            principal = authenticator.authenticate(request.headers.get("authorization"))
+            authorization = request.headers.get("authorization")
+            scheme, separator, credential = (authorization or "").partition(" ")
+            principal = (
+                identity_store.authenticate(credential)
+                if separator and scheme.lower() == "bearer"
+                else None
+            )
             if principal is None:
                 audit_log.record(
                     principal_id, request.method, request.url.path, "denied"
