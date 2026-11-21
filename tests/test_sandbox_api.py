@@ -36,7 +36,8 @@ def test_requester_can_create_pending_sandbox_approval(fake_model, tmp_path):
     )
     assert response.status_code == 201
     assert response.json()["status"] == "pending"
-    assert response.json()["approval_id"]
+    assert response.json()["review_id"]
+    assert response.json()["approval_token"]
 
 
 def test_human_approval_requires_separate_credential(fake_model, tmp_path):
@@ -46,13 +47,13 @@ def test_human_approval_requires_separate_credential(fake_model, tmp_path):
         headers={"Authorization": "Bearer requester-secret"},
         json={"request": {"source": "print('hello')"}},
     )
-    approval_id = created.json()["approval_id"]
+    review_id = created.json()["review_id"]
 
-    denied = client.post(f"/v1/sandbox/approvals/{approval_id}/approve")
+    denied = client.post(f"/v1/sandbox/approvals/{review_id}/approve")
     assert denied.status_code == 401
 
     approved = client.post(
-        f"/v1/sandbox/approvals/{approval_id}/approve",
+        f"/v1/sandbox/approvals/{review_id}/approve",
         headers={"X-Sandbox-Approval-Token": "Bearer human-approval-secret"},
     )
     assert approved.status_code == 200
@@ -66,9 +67,10 @@ def test_execution_requires_approval_and_requester_auth(fake_model, tmp_path):
         headers={"Authorization": "Bearer requester-secret"},
         json={"request": {"source": "print('hello')"}},
     )
-    approval_id = created.json()["approval_id"]
+    approval = created.json()
+    review_id = approval["review_id"]
     payload = {
-        "approval_id": approval_id,
+        "approval_token": approval["approval_token"],
         "request": {"source": "print('hello')"},
     }
 
@@ -120,7 +122,7 @@ def test_human_reviewer_can_inspect_exact_code_before_approval(fake_model, tmp_p
         headers={"Authorization": "Bearer requester-secret"},
         json={"request": {"source": "print('review me')"}},
     )
-    approval_id = created.json()["approval_id"]
+    review_id = created.json()["review_id"]
     reviewer_headers = {"X-Sandbox-Approval-Token": "Bearer human-approval-secret"}
 
     unauthorized = client.get("/v1/sandbox/reviews")
@@ -132,7 +134,7 @@ def test_human_reviewer_can_inspect_exact_code_before_approval(fake_model, tmp_p
     assert "request" not in queue.json()[0]
 
     review = client.get(
-        f"/v1/sandbox/reviews/{approval_id}", headers=reviewer_headers
+        f"/v1/sandbox/reviews/{review_id}", headers=reviewer_headers
     )
     assert review.status_code == 200
     assert review.json()["request"]["source"] == "print('review me')"
