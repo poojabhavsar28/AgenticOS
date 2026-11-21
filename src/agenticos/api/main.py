@@ -235,7 +235,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         ) or request.url.path.startswith("/v1/sandbox/reviews")
         if (
             request.url.path.startswith("/v1/")
-            and authenticator is not None
+            and config.api_auth_token is not None
             and not is_human_approval_route
         ):
             authorization = request.headers.get("authorization")
