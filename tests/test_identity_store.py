@@ -81,6 +81,24 @@ def test_workspace_grants_are_persistent_exact_and_default_deny(tmp_path) -> Non
     assert not reopened.is_allowed("alice", "workspace-a", "write", "files")
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("principal_id", "p" * 257),
+        ("workspace_id", "w" * 257),
+        ("action", "a" * 129),
+        ("resource", "r" * 2049),
+        ("token_id", "t" * 257),
+    ],
+)
+def test_identity_identifiers_enforce_storage_and_audit_length_limits(
+    tmp_path, field, value
+):
+    store = SQLiteIdentityStore(tmp_path / "identity.sqlite3")
+    with pytest.raises(ValueError, match="must not exceed"):
+        store._required(value, field)
+
+
 def test_workspace_grant_revocation_is_persistent(tmp_path) -> None:
     path = tmp_path / "identity.sqlite3"
     store = SQLiteIdentityStore(path)
