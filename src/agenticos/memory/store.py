@@ -104,13 +104,16 @@ class SQLiteMemoryStore:
             )
         return True
 
-    def owns_session(self, session_id: str, principal_id: str) -> bool:
-        """Return whether the principal owns the session."""
+    def owns_session(
+        self, session_id: str, principal_id: str, workspace_id: str
+    ) -> bool:
+        """Return whether the principal owns the session in the requested workspace."""
         self._validate_session_id(session_id)
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT 1 FROM session_owners WHERE session_id = ? AND principal_id = ?",
-                (session_id, principal_id),
+                "SELECT 1 FROM session_owners "
+                "WHERE session_id = ? AND principal_id = ? AND workspace_id = ?",
+                (session_id, principal_id, workspace_id),
             ).fetchone()
         return row is not None
 
