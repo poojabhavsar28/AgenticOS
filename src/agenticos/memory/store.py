@@ -48,6 +48,15 @@ class SQLiteMemoryStore:
                 "ON messages(session_id, id)"
             )
             connection.execute(
+                """CREATE TABLE IF NOT EXISTS session_owners (
+                    session_id TEXT PRIMARY KEY,
+                    principal_id TEXT NOT NULL,
+                    workspace_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )"""
+            )
+
+            connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS project_context (
                     workspace TEXT NOT NULL,
@@ -64,6 +73,39 @@ class SQLiteMemoryStore:
     def _validate_session_id(session_id: str) -> None:
         if not _SESSION_PATTERN.fullmatch(session_id):
             raise ValueError("Invalid session identifier")
+
+    def claim_session(self, session_id: str, principal_id: str, workspace_id: str) -> bool:
+        """Bind an empty/new session to one principal and workspace; never transfer ownership."""
+        self._validate_session_id(session_id)
+        if not principal_id or len(principal_id) > 256 or not workspace_id or len(workspace_id) > 256:
+            raise ValueError("Invalid session owner")
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT principal_id, workspace_id FROM session_owners WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if row is not None:
+                return row["principal_id"] == principal_id and row["workspace_id"] == workspace_id
+            existing = connection.execute(
+                "SELECT 1 FROM messages WHERE session_id = ? LIMIT 1", (session_id,)
+            ).fetchone()
+            if existing is not None:
+                return False
+            connection.execute(
+                "INSERT INTO session_owners(session_id, principal_id, workspace_id) VALUES (?, ?, ?)",
+                (session_id, principal_id, workspace_id),
+            )
+        return True
+
+    def owns_session(self, session_id: str, principal_id: str) -> bool:
+        """Return whether the principal owns the session."""
+        self._validate_session_id(session_id)
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT 1 FROM session_owners WHERE session_id = ? AND principal_id = ?",
+                (session_id, principal_id),
+            ).fetchone()
+        return row is not None
 
     def append_message(self, session_id: str, role: str, content: str) -> MemoryMessage:
         self._validate_session_id(session_id)
