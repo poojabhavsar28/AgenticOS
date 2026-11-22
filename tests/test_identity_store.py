@@ -125,9 +125,13 @@ def test_issued_token_expires_and_rotation_gets_a_fresh_lifetime(tmp_path):
 def test_token_ttl_must_be_a_positive_integer(tmp_path):
     store = SQLiteIdentityStore(tmp_path / "identity.sqlite3")
     store.create_principal("alice")
-    for ttl in (0, -1, True, 1.5):
+    for ttl in (0, -1, True, 1.5, 2**63):
         with pytest.raises(ValueError, match="ttl_seconds"):
             store.issue_token("alice", ttl_seconds=ttl)
+
+    token_id, _ = store.issue_token("alice", ttl_seconds=60)
+    with pytest.raises(ValueError, match="SQLite"):
+        store.rotate_token(token_id, ttl_seconds=2**63)
 
 
 
