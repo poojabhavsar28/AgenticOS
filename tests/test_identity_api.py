@@ -97,6 +97,12 @@ def test_identity_admin_can_manage_principals_tokens_and_workspace_grants(
         assert created.status_code == 201
         assert created.json() == {"principal_id": "alice", "status": "created"}
 
+        bootstrap_token_attempt = client.post(
+            "/v1/admin/principals/local-admin/tokens", headers=admin
+        )
+        assert bootstrap_token_attempt.status_code == 409
+        assert "IDENTITY_ADMIN_TOKEN" in bootstrap_token_attempt.json()["detail"]
+
         issued = client.post("/v1/admin/principals/alice/tokens", headers=admin)
         assert issued.status_code == 201
         token_data = issued.json()
