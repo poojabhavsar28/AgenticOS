@@ -216,6 +216,31 @@ def test_async_run_can_be_cancelled_through_api(tmp_path) -> None:
         assert events[-1]["event_type"] == "cancelled"
 
 
+def test_session_messages_are_principal_scoped(fake_model, tmp_path):
+    settings = Settings(
+        workspace_root=tmp_path,
+        memory_database_path=tmp_path / "memory.sqlite3",
+        operations_database_path=tmp_path / "operations.sqlite3",
+        api_auth_token="operator-secret",
+        identity_admin_token="admin-secret",
+    )
+    with TestClient(create_app(settings, model_client=fake_model)) as client:
+        store = client.app.state.identity_store
+        store.create_principal("alice")
+        _, alice_token = store.issue_token("alice")
+        alice = {"Authorization": f"Bearer {alice_token}"}
+        store.create_principal("bob")
+        _, bob_token = store.issue_token("bob")
+        bob = {"Authorization": f"Bearer {bob_token}"}
+
+        denied = client.get("/v1/sessions/session-a/messages", headers=alice)
+        assert denied.status_code == 404
+        store.claim_session("session-a", "alice", "workspace-a")
+        store.append_message("session-a", "user", "alice private")
+        assert client.get("/v1/sessions/session-a/messages", headers=alice).status_code == 200
+        assert client.get("/v1/sessions/session-a/messages", headers=bob).status_code == 404
+
+
 def test_authenticated_run_access_is_workspace_grant_and_owner_scoped(fake_model, tmp_path):
     settings = Settings(
         workspace_root=tmp_path,
