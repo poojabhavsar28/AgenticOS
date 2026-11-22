@@ -18,8 +18,15 @@ class ApprovalError(PermissionError):
     """Raised when an execution approval is missing, invalid, or unusable."""
 
 
+class ApprovalCapacityError(ApprovalError):
+    """Raised when the pending human-review queue is at capacity."""
+
+
 class SQLiteExecutionApprovalStore:
     """SQLite-backed approvals; only the one-time credential digest is persisted."""
+
+    MAX_PENDING_APPROVALS = 100
+    MAX_PENDING_PER_REQUESTER = 10
 
     def __init__(self, database_path: Path | str) -> None:
         self.database_path = prepare_private_sqlite_database(database_path)
@@ -97,6 +104,26 @@ class SQLiteExecutionApprovalStore:
         review_id = uuid4().hex
         approval_token = secrets.token_urlsafe(32)
         with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """UPDATE sandbox_execution_approvals
+                   SET status = 'expired', request_json = NULL
+                   WHERE status = 'pending' AND expires_at <= ?""",
+                (now,),
+            )
+            total_pending = connection.execute(
+                "SELECT COUNT(*) FROM sandbox_execution_approvals WHERE status = 'pending'"
+            ).fetchone()[0]
+            requester_pending = connection.execute(
+                """SELECT COUNT(*) FROM sandbox_execution_approvals
+                   WHERE status = 'pending' AND requester_id = ?""",
+                (requester_id,),
+            ).fetchone()[0]
+            if (
+                total_pending >= self.MAX_PENDING_APPROVALS
+                or requester_pending >= self.MAX_PENDING_PER_REQUESTER
+            ):
+                raise ApprovalCapacityError("Pending sandbox approval capacity reached")
             connection.execute(
                 """
                 INSERT INTO sandbox_execution_approvals
