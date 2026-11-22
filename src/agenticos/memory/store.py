@@ -77,7 +77,12 @@ class SQLiteMemoryStore:
     def claim_session(self, session_id: str, principal_id: str, workspace_id: str) -> bool:
         """Bind an empty/new session to one principal and workspace; never transfer ownership."""
         self._validate_session_id(session_id)
-        if not principal_id or len(principal_id) > 256 or not workspace_id or len(workspace_id) > 256:
+        if (
+            not principal_id
+            or len(principal_id) > 256
+            or not workspace_id
+            or len(workspace_id) > 256
+        ):
             raise ValueError("Invalid session owner")
         with self._connect() as connection:
             row = connection.execute(
@@ -92,7 +97,9 @@ class SQLiteMemoryStore:
             if existing is not None:
                 return False
             connection.execute(
-                "INSERT INTO session_owners(session_id, principal_id, workspace_id) VALUES (?, ?, ?)",
+                """INSERT INTO session_owners(
+                    session_id, principal_id, workspace_id
+                ) VALUES (?, ?, ?)""",
                 (session_id, principal_id, workspace_id),
             )
         return True
