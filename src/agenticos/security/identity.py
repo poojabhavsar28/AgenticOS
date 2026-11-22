@@ -171,6 +171,7 @@ class SQLiteIdentityStore:
             return None
         supplied = hashlib.sha256(token.encode("utf-8")).digest()
         match: str | None = None
+        ambiguous = False
         with self._connect() as connection:
             rows = connection.execute(
                 """
@@ -182,7 +183,14 @@ class SQLiteIdentityStore:
             ).fetchall()
         for row in rows:
             if hmac.compare_digest(bytes(row["verifier"]), supplied):
-                match = str(row["principal_id"])
+                principal_id = str(row["principal_id"])
+                if match is not None and principal_id != match:
+                    ambiguous = True
+                match = principal_id
+        # Never resolve a duplicated bearer secret by database row order:
+        # doing so could accidentally authenticate as a more privileged identity.
+        if ambiguous:
+            return None
         return AuthenticatedPrincipal(principal_id=match) if match else None
 
     def principal_for_token(self, token_id: str) -> str | None:
