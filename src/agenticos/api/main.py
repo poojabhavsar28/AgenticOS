@@ -37,7 +37,11 @@ from agenticos.security.approval import (
     HumanApprovalManager,
     SQLiteExecutionApprovalStore,
 )
-from agenticos.security.audit import SQLiteAuditLog, load_or_create_audit_key
+from agenticos.security.audit import (
+    AuditIntegrityError,
+    SQLiteAuditLog,
+    load_or_create_audit_key,
+)
 from agenticos.security.auth import BearerTokenAuthenticator
 from agenticos.security.identity import SQLiteIdentityStore
 from agenticos.security.authorized_sandbox import AuthorizedSandboxExecutor
@@ -471,6 +475,32 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         record_admin_audit(request, "identity.revoke_workspace", f"principal:{principal_id};workspace:{workspace_id};action:{action};resource:{resource}")
         return {"principal_id": principal_id, "workspace_id": workspace_id, "status": "revoked"}
+
+    @app.get("/v1/admin/audit/verify")
+    async def admin_verify_audit(expected_head: str | None = None, request: Request = None):
+        require_identity_admin(request)
+        if expected_head is not None and (
+            len(expected_head) != 64
+            or any(character not in "0123456789abcdef" for character in expected_head)
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="expected_head must be a 64-character lowercase hexadecimal digest",
+            )
+        try:
+            valid = request.app.state.audit_log.verify_integrity(
+                expected_head=expected_head
+            )
+        except AuditIntegrityError:
+            return JSONResponse(
+                status_code=409,
+                content={"valid": False, "checkpoint_checked": expected_head is not None},
+            )
+        return {
+            "valid": valid,
+            "checkpoint_checked": expected_head is not None,
+            "chain_head": request.app.state.audit_log.chain_head(),
+        }
 
     @app.get("/sandbox/review", response_class=HTMLResponse)
     async def sandbox_review_page():
