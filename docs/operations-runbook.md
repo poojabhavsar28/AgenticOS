@@ -146,8 +146,30 @@ Use the exact workspace/action/resource grant endpoints. Test both allowed and d
 ### Verify audit integrity
 Call `GET /v1/admin/audit/verify`. Retain the returned chain head in a trusted system outside the AgenticOS host/database. On the next verification, provide that value as `expected_head`. A chain mismatch returns a conflict and should trigger incident investigation.
 
-### Backups
-Back up SQLite databases and the audit key using encrypted storage and strict access controls. Keep database and key backups under separate access controls where feasible. Test restore procedures. A database-only restore without the corresponding key/checkpoint may prevent meaningful integrity verification.
+### Backups and restore drills
+
+AgenticOS provides `backup_sqlite_database(source, destination)` and `restore_sqlite_database(backup, destination)` in `agenticos.security.backup`. These helpers use SQLite's online backup API, run `PRAGMA integrity_check`, write to a temporary file, and atomically replace the destination. On POSIX, backup files are created with owner-only permissions.
+
+Example for one configured SQLite database:
+
+```python
+from agenticos.security.backup import backup_sqlite_database, restore_sqlite_database
+
+backup_sqlite_database(
+    ".agenticos/operations.sqlite3",
+    "/secure-backups/operations-2026-11-22.sqlite3",
+)
+restore_sqlite_database(
+    "/secure-backups/operations-2026-11-22.sqlite3",
+    "/recovery/operations.sqlite3",
+)
+```
+
+Repeat for every configured database, including memory and operations/checkpoint state. Coordinate the backup window with a quiesced application or a documented snapshot procedure when consistency across multiple databases matters: each SQLite backup is consistent individually, but separate database files are not captured as one cross-database transaction.
+
+Back up the audit signing key separately using encrypted storage and stricter access controls. Preserve the external audit chain-head checkpoint alongside the backup metadata, but outside the application host and database. A database-only restore without the matching audit key and trusted checkpoint cannot provide full audit-integrity verification. Do not overwrite the live database during recovery; restore to a new path, validate it, then switch configuration during a controlled maintenance window.
+
+Run scheduled restore drills. Record backup age, restore duration, integrity-check results, and recovery-point/recovery-time objectives. These helpers do not implement scheduling, encryption, off-site replication, or automated key/checkpoint backup.
 
 ## 10. Troubleshooting
 
