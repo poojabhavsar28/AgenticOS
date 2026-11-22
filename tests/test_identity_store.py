@@ -161,3 +161,17 @@ def test_existing_identity_database_is_migrated_with_expiry_column(tmp_path):
             row[1] for row in connection.execute("PRAGMA table_info(identity_tokens)")
         }
     assert "expires_at" in columns
+
+
+
+def test_authentication_rejects_oversized_bearer_token_before_lookup(
+    tmp_path, monkeypatch
+):
+    store = SQLiteIdentityStore(tmp_path / "identity.sqlite3")
+
+    def unexpected_database_lookup():
+        raise AssertionError("oversized bearer token must be rejected before DB lookup")
+
+    monkeypatch.setattr(store, "_connect", unexpected_database_lookup)
+    oversized = "x" * (store.MAX_BEARER_TOKEN_LENGTH + 1)
+    assert store.authenticate(oversized) is None
