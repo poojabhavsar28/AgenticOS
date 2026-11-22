@@ -277,6 +277,7 @@ def test_authenticated_run_access_is_workspace_grant_and_owner_scoped(fake_model
         assert denied.status_code == 403
 
         store.grant("alice", "workspace-a", "execute", "workflow:run")
+        store.grant("alice", "workspace-a", "read", "sessions")
         created = client.post(
             "/v1/runs", json={"task": "private", "workspace": "workspace-a"}, headers=alice
         )
