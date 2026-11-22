@@ -213,3 +213,43 @@ def test_expired_pending_approvals_are_reclaimed_when_queue_is_full(tmp_path, mo
     manager.request("agent-2", SandboxExecutionRequest(source="pass"))
 
     assert [item["requester_id"] for item in manager.list_pending()] == ["agent-2"]
+
+
+
+def test_approved_request_expires_and_releases_pending_source(tmp_path, monkeypatch):
+    import agenticos.security.approval as approval_module
+
+    now = [1000.0]
+    monkeypatch.setattr(approval_module.time, "time", lambda: now[0])
+    manager = make_manager(tmp_path)
+    request = SandboxExecutionRequest(source="print('sensitive')")
+    review_id = manager.request("agent-1", request, ttl_seconds=2)["review_id"]
+    manager.approve(review_id, "human-admin")
+
+    now[0] = 1003.0
+    manager.request("agent-2", SandboxExecutionRequest(source="pass"))
+    expired = manager.get_review(review_id)
+
+    assert expired is not None
+    assert expired["status"] == "expired"
+    assert expired["request"] is None
+
+
+def test_terminal_approval_history_is_pruned_after_retention_window(
+    tmp_path, monkeypatch
+):
+    import agenticos.security.approval as approval_module
+
+    now = [1000.0]
+    monkeypatch.setattr(approval_module.time, "time", lambda: now[0])
+    manager = make_manager(tmp_path)
+    request = SandboxExecutionRequest(source="pass")
+    review_id = manager.request("agent-1", request, ttl_seconds=1)["review_id"]
+
+    now[0] = 1002.0
+    manager.request("agent-2", request)
+    assert manager.get_review(review_id)["status"] == "expired"
+
+    now[0] += manager.store.TERMINAL_RETENTION_SECONDS + 1
+    manager.request("agent-3", request)
+    assert manager.get_review(review_id) is None
