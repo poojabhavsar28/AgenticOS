@@ -650,6 +650,14 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             if principal is not None:
                 require_workspace_permission(request, payload.workspace, "read", "sessions")
             history = store.get_recent_messages(payload.session_id)
+            if principal is not None:
+                require_workspace_permission(
+                    request, payload.workspace, "read", "workspace:context"
+                )
+                if payload.include_repository_context:
+                    require_workspace_permission(
+                        request, payload.workspace, "read", "workspace:repository-index"
+                    )
             project_items = store.get_project_context(payload.workspace)
             repository_items = (
                 request.app.state.repository_index.search(payload.workspace, payload.task)
@@ -704,6 +712,14 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             if principal is not None:
                 require_workspace_permission(request, payload.workspace, "read", "sessions")
             history = store.get_recent_messages(payload.session_id)
+            if principal is not None:
+                require_workspace_permission(
+                    request, payload.workspace, "read", "workspace:context"
+                )
+                if payload.include_repository_context:
+                    require_workspace_permission(
+                        request, payload.workspace, "read", "workspace:repository-index"
+                    )
             project_items = store.get_project_context(payload.workspace)
             repository_items = (
                 request.app.state.repository_index.search(payload.workspace, payload.task)
