@@ -35,6 +35,10 @@ class SQLiteIdentityStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_identity_tokens_active
                     ON identity_tokens(revoked_at, principal_id);
+                CREATE TABLE IF NOT EXISTS configured_identity_tokens (
+                    principal_id TEXT PRIMARY KEY REFERENCES principals(principal_id),
+                    token_id TEXT NOT NULL UNIQUE REFERENCES identity_tokens(token_id)
+                );
                 CREATE TABLE IF NOT EXISTS workspace_grants (
                     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
                     workspace_id TEXT NOT NULL,
@@ -106,11 +110,12 @@ class SQLiteIdentityStore:
         return token_id, token
 
     def register_configured_token(self, principal_id: str, token: str) -> None:
-        """Migrate an operator-configured token into the persistent verifier store."""
+        """Register the configured credential and revoke its previous configured value."""
         principal_id = self._required(principal_id, "principal_id")
         if not isinstance(token, str) or not token.strip():
             raise ValueError("Configured token must be non-empty")
         verifier = hashlib.sha256(token.encode("utf-8")).digest()
+        now = int(time.time())
         with self._connect() as connection:
             connection.execute(
                 """
@@ -118,18 +123,47 @@ class SQLiteIdentityStore:
                 VALUES (?, 1, ?)
                 ON CONFLICT(principal_id) DO NOTHING
                 """,
-                (principal_id, int(time.time())),
+                (principal_id, now),
             )
+            current = connection.execute(
+                """
+                SELECT token_id FROM identity_tokens
+                WHERE principal_id = ? AND verifier = ? AND revoked_at IS NULL
+                """,
+                (principal_id, verifier),
+            ).fetchone()
+            previous = connection.execute(
+                "SELECT token_id FROM configured_identity_tokens WHERE principal_id = ?",
+                (principal_id,),
+            ).fetchone()
+            if previous is not None and (
+                current is None or str(previous["token_id"]) != str(current["token_id"])
+            ):
+                connection.execute(
+                    """
+                    UPDATE identity_tokens SET revoked_at = ?
+                    WHERE token_id = ? AND revoked_at IS NULL
+                    """,
+                    (now, previous["token_id"]),
+                )
+            if current is None:
+                token_id = uuid4().hex
+                connection.execute(
+                    """
+                    INSERT INTO identity_tokens(token_id, principal_id, verifier, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (token_id, principal_id, verifier, now),
+                )
+            else:
+                token_id = str(current["token_id"])
             connection.execute(
                 """
-                INSERT INTO identity_tokens(token_id, principal_id, verifier, created_at)
-                SELECT ?, ?, ?, ?
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM identity_tokens
-                    WHERE principal_id = ? AND verifier = ? AND revoked_at IS NULL
-                )
+                INSERT INTO configured_identity_tokens(principal_id, token_id)
+                VALUES (?, ?)
+                ON CONFLICT(principal_id) DO UPDATE SET token_id = excluded.token_id
                 """,
-                (uuid4().hex, principal_id, verifier, int(time.time()), principal_id, verifier),
+                (principal_id, token_id),
             )
 
     def authenticate(self, token: str | None) -> AuthenticatedPrincipal | None:
