@@ -360,6 +360,20 @@ def test_duplicate_bearer_secret_across_principals_fails_closed(tmp_path):
     assert store.authenticate("shared-secret") is None
 
 
+@pytest.mark.parametrize(
+    "configured_token",
+    ["", "token with spaces", "token\\twith-tab", "x" * 4097],
+)
+def test_configured_identity_token_rejects_invalid_credentials(
+    tmp_path, configured_token
+):
+    from agenticos.security.identity import SQLiteIdentityStore
+
+    store = SQLiteIdentityStore(tmp_path / "identities.sqlite3")
+    with pytest.raises(ValueError, match="Configured token"):
+        store.register_configured_token("operator", configured_token)
+
+
 def test_replacing_configured_token_revokes_previous_credential(tmp_path):
     from agenticos.security.identity import SQLiteIdentityStore
 
