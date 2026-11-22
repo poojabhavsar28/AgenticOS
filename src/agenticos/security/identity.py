@@ -57,7 +57,9 @@ class SQLiteIdentityStore:
     def _required(value: str, field: str) -> str:
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"{field} must be a non-empty string")
-        return value.strip()
+        if value != value.strip() or any(ord(character) < 32 for character in value):
+            raise ValueError(f"{field} must be canonical and contain no control characters")
+        return value
 
     def create_principal(self, principal_id: str) -> None:
         principal_id = self._required(principal_id, "principal_id")
