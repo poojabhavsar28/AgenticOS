@@ -1,5 +1,7 @@
 """Backup and restore tests for SQLite-backed durable state."""
 
+# ruff: noqa: I001
+
 import sqlite3
 
 import pytest
