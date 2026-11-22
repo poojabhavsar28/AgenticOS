@@ -146,6 +146,10 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         )
     if config.sandbox_enabled and config.api_auth_token == config.sandbox_approval_token:
         raise ValueError("Sandbox approval token must differ from API_AUTH_TOKEN")
+    # Secure database directories and files before the identity store opens
+    # or creates either SQLite database.
+    prepare_private_sqlite_database(config.operations_database_path)
+    prepare_private_sqlite_database(config.memory_database_path)
     identity_store = SQLiteIdentityStore(config.operations_database_path)
     if config.identity_admin_token:
         identity_store.register_configured_token(
@@ -167,11 +171,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
                     "execute",
                     tool_name,
                 )
-    # Runtime and security stores share dedicated SQLite paths. Prepare both
-    # before any store opens them so directories, databases and sidecars inherit
-    # restrictive permissions from the first write.
-    prepare_private_sqlite_database(config.operations_database_path)
-    prepare_private_sqlite_database(config.memory_database_path)
+    # Runtime and security stores share the prepared private SQLite paths.
     configure_logging(config.log_level)
     logger = get_logger(__name__)
     model = model_client or OllamaClient(
