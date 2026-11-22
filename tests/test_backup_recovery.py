@@ -96,3 +96,25 @@ def test_backup_output_is_private_on_posix(tmp_path) -> None:
         connection.execute("CREATE TABLE example (value TEXT)")
     backup = backup_sqlite_database(source, tmp_path / "backup.sqlite3")
     assert stat.S_IMODE(backup.stat().st_mode) == 0o600
+
+
+@pytest.mark.asyncio
+async def test_backup_restore_preserves_run_checkpoints(tmp_path) -> None:
+    from agenticos.runtime.checkpoints import SQLiteCheckpointStore
+
+    original = tmp_path / "operations.sqlite3"
+    store = SQLiteCheckpointStore(original)
+    await store.save(
+        "run-42",
+        {"run_id": "run-42", "status": "completed", "result": "verified"},
+    )
+
+    backup = backup_sqlite_database(original, tmp_path / "operations.bak")
+    restored = restore_sqlite_database(backup, tmp_path / "recovered-operations.sqlite3")
+
+    recovered = SQLiteCheckpointStore(restored)
+    assert await recovered.load("run-42") == {
+        "run_id": "run-42",
+        "status": "completed",
+        "result": "verified",
+    }
