@@ -626,7 +626,20 @@ def test_audit_verification_endpoint_is_admin_only_and_supports_checkpoint(
             headers=admin,
         )
         assert verified.status_code == 200
-        assert verified.json() == {"valid": True, "checkpoint_checked": True}
+        assert verified.json()["valid"] is True
+        assert verified.json()["checkpoint_checked"] is True
+        next_checkpoint = verified.json()["chain_head"]
+        assert len(next_checkpoint) == 64
+
+        # The endpoint returns the head after its own audit event, so the next
+        # verification can use that fresh external checkpoint.
+        repeated = client.get(
+            "/v1/admin/audit/verify",
+            params={"expected_head": next_checkpoint},
+            headers=admin,
+        )
+        assert repeated.status_code == 200
+        assert repeated.json()["valid"] is True
 
         mismatch = client.get(
             "/v1/admin/audit/verify",
