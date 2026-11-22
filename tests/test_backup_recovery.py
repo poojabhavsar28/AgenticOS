@@ -4,11 +4,11 @@ import sqlite3
 
 import pytest
 
+from agenticos.security.audit import SQLiteAuditLog
 from agenticos.security.backup import (
     backup_sqlite_database,
     restore_sqlite_database,
 )
-from agenticos.security.audit import SQLiteAuditLog
 from agenticos.security.identity import SQLiteIdentityStore
 
 
