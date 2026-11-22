@@ -19,6 +19,26 @@ def _settings(tmp_path):
     )
 
 
+@pytest.mark.parametrize(
+    "authorization",
+    [
+        "Bearer  configured-operator-secret",
+        "Bearer configured-operator-secret ",
+        "Bearer configured-operator-secret\\ttrailing",
+        "Basic configured-operator-secret",
+    ],
+)
+def test_api_rejects_malformed_bearer_headers(
+    fake_model, tmp_path, authorization
+) -> None:
+    with TestClient(create_app(_settings(tmp_path), model_client=fake_model)) as client:
+        response = client.get(
+            "/v1/sessions/missing/messages",
+            headers={"Authorization": authorization},
+        )
+        assert response.status_code == 401
+
+
 def test_api_authentication_uses_persistent_identity_store(fake_model, tmp_path) -> None:
     settings = _settings(tmp_path)
     with TestClient(create_app(settings, model_client=fake_model)) as client:
