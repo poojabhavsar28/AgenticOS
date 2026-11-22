@@ -238,11 +238,16 @@ def test_session_messages_are_principal_scoped(fake_model, tmp_path):
             "/v1/sessions/session-a/messages?workspace_id=workspace-a", headers=alice
         )
         assert denied.status_code == 404
+        store.grant("alice", "workspace-a", "read", "sessions")
         memory.claim_session("session-a", "alice", "workspace-a")
         memory.append_message("session-a", "user", "alice private")
         assert client.get(
             "/v1/sessions/session-a/messages?workspace_id=workspace-a", headers=alice
         ).status_code == 200
+        store.revoke_grant("alice", "workspace-a", "read", "sessions")
+        assert client.get(
+            "/v1/sessions/session-a/messages?workspace_id=workspace-a", headers=alice
+        ).status_code == 403
         assert client.get(
             "/v1/sessions/session-a/messages?workspace_id=workspace-b", headers=alice
         ).status_code == 404
