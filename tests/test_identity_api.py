@@ -101,6 +101,9 @@ def test_identity_admin_can_manage_principals_tokens_and_workspace_grants(
         assert issued.status_code == 201
         token_data = issued.json()
         assert token_data["token"].startswith("agx_")
+        assert token_data["expires_at"] == client.app.state.identity_store.token_expiry(
+            token_data["token_id"]
+        )
         authenticated = client.app.state.identity_store.authenticate(token_data["token"])
         assert authenticated is not None
         assert authenticated.principal_id == "alice"
