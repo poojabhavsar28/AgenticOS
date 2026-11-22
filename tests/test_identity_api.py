@@ -194,3 +194,41 @@ def test_admin_and_operator_principals_must_be_distinct(fake_model, tmp_path):
     settings.identity_admin_principal = "operator"
     with pytest.raises(ValueError, match="must differ"):
         create_app(settings, model_client=fake_model)
+
+
+
+def test_identity_admin_actions_are_written_to_tamper_evident_audit_log(
+    fake_model, tmp_path
+):
+    with TestClient(create_app(_settings(tmp_path), model_client=fake_model)) as client:
+        admin = {"Authorization": "Bearer configured-admin-secret"}
+        created = client.post(
+            "/v1/admin/principals",
+            json={"principal_id": "audit-user"},
+            headers=admin,
+        )
+        assert created.status_code == 201
+
+        issued = client.post(
+            "/v1/admin/principals/audit-user/tokens", headers=admin
+        )
+        assert issued.status_code == 201
+        issued_token = issued.json()["token"]
+
+        grant = client.put(
+            "/v1/admin/principals/audit-user/workspaces/workspace-1/grants",
+            json={"action": "execute", "resource": "run"},
+            headers=admin,
+        )
+        assert grant.status_code == 200
+
+        events = client.app.state.audit_log.events()
+        semantic_events = [event for event in events if event.action.startswith("identity.")]
+        actions = {event.action for event in semantic_events}
+        assert {
+            "identity.create_principal",
+            "identity.issue_token",
+            "identity.grant_workspace",
+        }.issubset(actions)
+        assert all(issued_token not in event.resource for event in semantic_events)
+        assert client.app.state.audit_log.verify_integrity()
