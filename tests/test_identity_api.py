@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from agenticos.api.main import create_app
 from agenticos.config import Settings
+from agenticos.runtime.tools import ToolRegistry
 
 
 def _settings(tmp_path):
@@ -264,3 +265,51 @@ def test_failed_identity_admin_operation_is_recorded_with_http_status(
         assert failed_request[-1].principal_id == "local-admin"
         assert failed_request[-1].outcome == "404"
         assert client.app.state.audit_log.verify_integrity()
+
+
+
+class _EchoTool:
+    name = "echo"
+
+    async def execute(self, arguments: dict[str, object]) -> dict[str, object]:
+        return {"echo": arguments}
+
+
+def test_workspace_tool_api_enforces_exact_principal_and_workspace_grants(
+    fake_model, tmp_path
+):
+    with TestClient(create_app(_settings(tmp_path), model_client=fake_model)) as client:
+        store = client.app.state.identity_store
+        store.create_principal("alice")
+        _, alice_token = store.issue_token("alice")
+        headers = {"Authorization": f"Bearer {alice_token}"}
+
+        registry = ToolRegistry(identity_store=store)
+        registry.register(_EchoTool())
+        client.app.state.workflow.tool_registry = registry
+
+        store.grant("alice", "workspace-a", "execute", "echo")
+        allowed = client.post(
+            "/v1/workspaces/workspace-a/tools/echo/execute",
+            json={"message": "hello"},
+            headers=headers,
+        )
+        assert allowed.status_code == 200
+        assert allowed.json() == {"echo": {"message": "hello"}}
+
+        denied_other_workspace = client.post(
+            "/v1/workspaces/workspace-b/tools/echo/execute",
+            json={"message": "must not execute"},
+            headers=headers,
+        )
+        assert denied_other_workspace.status_code == 403
+
+        denied_other_tool = client.post(
+            "/v1/workspaces/workspace-a/tools/unknown/execute",
+            json={},
+            headers=headers,
+        )
+        assert denied_other_tool.status_code == 404
+
+        assert store.is_allowed("alice", "workspace-a", "execute", "echo")
+        assert not store.is_allowed("alice", "workspace-b", "execute", "echo")
