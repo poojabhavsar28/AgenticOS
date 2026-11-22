@@ -306,7 +306,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
                     principal_id, request.method, request.url.path, "error"
                 )
             raise
-        if request.url.path.startswith("/v1/"):
+        if request.url.path.startswith("/v1/") and request.url.path != "/v1/admin/audit/verify":
             audit_log.record(
                 principal_id, request.method, request.url.path, str(response.status_code)
             )
@@ -492,13 +492,26 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
                 expected_head=expected_head
             )
         except AuditIntegrityError:
+            request.app.state.audit_log.record(
+                request.state.principal.principal_id,
+                "audit.verify",
+                "audit-chain",
+                "integrity_failed",
+            )
             return JSONResponse(
                 status_code=409,
                 content={"valid": False, "checkpoint_checked": expected_head is not None},
             )
+        request.app.state.audit_log.record(
+            request.state.principal.principal_id,
+            "audit.verify",
+            "audit-chain",
+            "success",
+        )
         return {
             "valid": valid,
             "checkpoint_checked": expected_head is not None,
+            "chain_head": request.app.state.audit_log.chain_head(),
         }
 
     @app.get("/sandbox/review", response_class=HTMLResponse)
