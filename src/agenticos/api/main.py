@@ -477,7 +477,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         return {"principal_id": principal_id, "workspace_id": workspace_id, "status": "revoked"}
 
     @app.get("/v1/admin/audit/verify")
-    async def admin_verify_audit(expected_head: str | None = None, request: Request = None):
+    async def admin_verify_audit(request: Request, expected_head: str | None = None):
         require_identity_admin(request)
         if expected_head is not None and (
             len(expected_head) != 64
@@ -499,7 +499,6 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         return {
             "valid": valid,
             "checkpoint_checked": expected_head is not None,
-            "chain_head": request.app.state.audit_log.chain_head(),
         }
 
     @app.get("/sandbox/review", response_class=HTMLResponse)
