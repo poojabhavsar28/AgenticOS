@@ -489,6 +489,43 @@ def test_workspace_tool_api_enforces_exact_principal_and_workspace_grants(
 
 
 
+def test_workspace_change_routes_require_workspace_grants(fake_model, tmp_path):
+    settings = _settings(tmp_path)
+    project = tmp_path / "project-a"
+    project.mkdir()
+    with TestClient(create_app(settings, model_client=fake_model)) as client:
+        store = client.app.state.identity_store
+        store.create_principal("alice")
+        _, token = store.issue_token("alice")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        denied_stage = client.post(
+            "/v1/workspaces/project-a/changes",
+            json={"relative_path": "note.txt", "content": "private"},
+            headers=headers,
+        )
+        assert denied_stage.status_code == 403
+        assert client.get("/v1/workspaces/project-a/changes", headers=headers).status_code == 403
+
+        store.grant("alice", "project-a", "write", "workspace:changes")
+        staged = client.post(
+            "/v1/workspaces/project-a/changes",
+            json={"relative_path": "note.txt", "content": "approved"},
+            headers=headers,
+        )
+        assert staged.status_code == 202
+        change_id = staged.json()["change_id"]
+        assert client.get("/v1/workspaces/project-a/changes", headers=headers).status_code == 403
+
+        store.grant("alice", "project-a", "read", "workspace:changes")
+        assert client.get("/v1/workspaces/project-a/changes", headers=headers).status_code == 200
+        approved = client.post(
+            f"/v1/workspaces/project-a/changes/{change_id}/approve", headers=headers
+        )
+        assert approved.status_code == 200
+        assert (project / "note.txt").read_text(encoding="utf-8") == "approved"
+
+
 async def _raise_unexpected_api_error():
     raise RuntimeError("simulated unexpected handler failure")
 
