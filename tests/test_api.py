@@ -279,6 +279,22 @@ def test_authenticated_run_access_is_workspace_grant_and_owner_scoped(fake_model
         store.grant("alice", "workspace-a", "execute", "workflow:run")
         store.grant("alice", "workspace-a", "read", "sessions")
         store.grant("alice", "workspace-a", "read", "workflow:run")
+        denied_context = client.post(
+            "/v1/runs", json={"task": "private", "workspace": "workspace-a"}, headers=alice
+        )
+        assert denied_context.status_code == 403
+        store.grant("alice", "workspace-a", "read", "workspace:context")
+        denied_repository = client.post(
+            "/v1/runs",
+            json={
+                "task": "private",
+                "workspace": "workspace-a",
+                "include_repository_context": True,
+            },
+            headers=alice,
+        )
+        assert denied_repository.status_code == 403
+        store.grant("alice", "workspace-a", "read", "workspace:repository-index")
         created = client.post(
             "/v1/runs", json={"task": "private", "workspace": "workspace-a"}, headers=alice
         )
