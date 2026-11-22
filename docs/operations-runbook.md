@@ -201,3 +201,24 @@ Stop the Uvicorn process gracefully. Do not delete SQLite files while the applic
 - Deployment-specific TLS/reverse-proxy and rate-limiting guidance.
 - Host-level monitoring and resource isolation.
 - Independent security assessment before accepting hostile public workloads.
+
+
+## 13. API load probe
+
+An opt-in bounded HTTP probe is available at `scripts/benchmark_api.py`. It reports request throughput, success/failure counts, and mean/p50/p95/p99/max latency. It does not measure host CPU or memory, and it does not establish a production capacity guarantee.
+
+Start AgenticOS locally, then run a low-impact health probe:
+
+```bash
+python scripts/benchmark_api.py --mode health --requests 30 --concurrency 5
+```
+
+For an authorized local run-workflow probe:
+
+```bash
+python scripts/benchmark_api.py --mode run --requests 10 --concurrency 2
+```
+
+Set `AGENTICOS_BENCHMARK_TOKEN` when the target requires a bearer token. The script defaults to loopback targets, limits concurrency to 100 and requests to 10,000, and requires `--allow-remote` for non-local hosts. Run progressively (for example 10, 25, 50, then 100 concurrent requests) only after reviewing host capacity. Use representative tasks and a dedicated test workspace; avoid production workloads. Record hardware, model, configuration, dataset, warm-up, and exact commit alongside results. Capture CPU and memory with host monitoring separately.
+
+The script has been added as a measurement harness; no throughput or latency numbers should be claimed until it has been run against a real, configured AgenticOS instance.
