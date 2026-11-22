@@ -603,3 +603,42 @@ def test_unhandled_api_exception_is_written_to_audit_log(fake_model, tmp_path):
         assert failure_events[-1].principal_id == "operator"
         assert failure_events[-1].outcome == "error"
         assert client.app.state.audit_log.verify_integrity()
+
+
+
+def test_audit_verification_endpoint_is_admin_only_and_supports_checkpoint(
+    fake_model, tmp_path
+):
+    with TestClient(create_app(_settings(tmp_path), model_client=fake_model)) as client:
+        admin = {"Authorization": "Bearer configured-admin-secret"}
+        ordinary = {"Authorization": "Bearer configured-operator-secret"}
+
+        assert client.get("/v1/admin/audit/verify", headers=ordinary).status_code == 403
+
+        client.app.state.audit_log.record(
+            "operator", "test.audit", "resource:test", "success"
+        )
+        checkpoint = client.app.state.audit_log.chain_head()
+
+        verified = client.get(
+            "/v1/admin/audit/verify",
+            params={"expected_head": checkpoint},
+            headers=admin,
+        )
+        assert verified.status_code == 200
+        assert verified.json() == {"valid": True, "checkpoint_checked": True}
+
+        mismatch = client.get(
+            "/v1/admin/audit/verify",
+            params={"expected_head": "0" * 64},
+            headers=admin,
+        )
+        assert mismatch.status_code == 409
+        assert mismatch.json() == {"valid": False, "checkpoint_checked": True}
+
+        malformed = client.get(
+            "/v1/admin/audit/verify",
+            params={"expected_head": "not-a-digest"},
+            headers=admin,
+        )
+        assert malformed.status_code == 422
