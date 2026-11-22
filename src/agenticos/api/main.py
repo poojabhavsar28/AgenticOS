@@ -997,6 +997,11 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         if snapshot is None:
             raise HTTPException(status_code=404, detail="Run not found")
         require_run_owner(request, snapshot)
+        principal = getattr(request.state, "principal", None)
+        if principal is not None and principal.principal_id != config.identity_admin_principal:
+            require_workspace_permission(
+                request, str(snapshot.get("workspace_id", "default")), "read", "workflow:run"
+            )
         return snapshot
 
     return app
