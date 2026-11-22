@@ -350,7 +350,11 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         except (KeyError, PermissionError) as exc:
             raise HTTPException(status_code=404, detail="Principal not found or disabled") from exc
         record_admin_audit(request, "identity.issue_token", f"principal:{principal_id};token:{token_id}")
-        return {"token_id": token_id, "token": token}
+        return {
+            "token_id": token_id,
+            "token": token,
+            "expires_at": request.app.state.identity_store.token_expiry(token_id),
+        }
 
     @app.post("/v1/admin/tokens/{token_id}/rotate")
     async def admin_rotate_token(token_id: str, request: Request):
@@ -369,7 +373,12 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         except PermissionError as exc:
             raise HTTPException(status_code=404, detail="Active token not found") from exc
         record_admin_audit(request, "identity.rotate_token", f"token:{token_id};replacement:{new_token_id}")
-        return {"token_id": new_token_id, "token": new_token, "status": "rotated"}
+        return {
+            "token_id": new_token_id,
+            "token": new_token,
+            "expires_at": request.app.state.identity_store.token_expiry(new_token_id),
+            "status": "rotated",
+        }
 
     @app.delete("/v1/admin/tokens/{token_id}")
     async def admin_revoke_token(token_id: str, request: Request):
