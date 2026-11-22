@@ -351,6 +351,11 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     @app.post("/v1/admin/principals/{principal_id}/tokens", status_code=201)
     async def admin_issue_token(principal_id: str, request: Request):
         require_identity_admin(request)
+        if principal_id == config.identity_admin_principal:
+            raise HTTPException(
+                status_code=409,
+                detail="Bootstrap administrator credentials are managed through IDENTITY_ADMIN_TOKEN",
+            )
         record_admin_intent(request, "identity.issue_token", f"principal:{principal_id}")
         try:
             token_id, token = request.app.state.identity_store.issue_token(principal_id)
