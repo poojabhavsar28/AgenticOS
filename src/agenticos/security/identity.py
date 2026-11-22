@@ -238,9 +238,11 @@ class SQLiteIdentityStore:
             cursor = connection.execute(
                 """
                 UPDATE identity_tokens
-                SET revoked_at = ? WHERE token_id = ? AND revoked_at IS NULL
+                SET revoked_at = ?
+                WHERE token_id = ? AND revoked_at IS NULL
+                  AND (expires_at IS NULL OR expires_at > ?)
                 """,
-                (int(time.time()), token_id),
+                (now, token_id, now),
             )
             if cursor.rowcount != 1:
                 raise KeyError(f"Unknown or already revoked token: {token_id}")
@@ -264,8 +266,9 @@ class SQLiteIdentityStore:
                 FROM identity_tokens AS t
                 JOIN principals AS p ON p.principal_id = t.principal_id
                 WHERE t.token_id = ? AND t.revoked_at IS NULL
+                  AND (t.expires_at IS NULL OR t.expires_at > ?)
                 """,
-                (token_id,),
+                (token_id, now),
             ).fetchone()
             if row is None or not row["enabled"]:
                 raise PermissionDenied(
