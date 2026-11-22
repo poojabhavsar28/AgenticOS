@@ -715,6 +715,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     async def save_project_context(
         workspace: str, payload: dict[str, object], request: Request
     ) -> dict[str, str]:
+        require_workspace_permission(request, workspace, "write", "workspace:context")
         try:
             resolve_workspace_path(config.workspace_root, workspace)
             source_key = str(payload.get("source_key", ""))
@@ -731,6 +732,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
 
     @app.post("/v1/workspaces/{workspace}/repository-index")
     async def refresh_repository_index(workspace: str, request: Request) -> dict[str, int | bool]:
+        require_workspace_permission(request, workspace, "write", "workspace:repository-index")
         try:
             return request.app.state.repository_index.refresh(workspace)
         except (WorkspaceBoundaryError, ValueError) as exc:
@@ -740,6 +742,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     async def search_repository_index(
         workspace: str, request: Request, q: str, limit: int = 10
     ) -> list[dict[str, str]]:
+        require_workspace_permission(request, workspace, "read", "workspace:repository-index")
         try:
             return request.app.state.repository_index.search(workspace, q, limit)
         except (WorkspaceBoundaryError, ValueError) as exc:
@@ -747,6 +750,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
 
     @app.get("/v1/workspaces/{workspace}/files", response_model=list[str])
     async def list_workspace_files(workspace: str, request: Request) -> list[str]:
+        require_workspace_permission(request, workspace, "read", "workspace:files")
         try:
             return list(request.app.state.workspace_files.list_files(workspace))
         except (WorkspaceBoundaryError, ValueError) as exc:
@@ -759,6 +763,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     async def read_workspace_file(
         workspace: str, relative_path: str, request: Request
     ) -> WorkspaceReadResponse:
+        require_workspace_permission(request, workspace, "read", "workspace:files")
         try:
             content = request.app.state.workspace_files.read_text(workspace, relative_path)
         except FileNotFoundError as exc:
