@@ -33,6 +33,7 @@ from agenticos.runtime.sandbox_tools import (
     RequestCodeExecutionApprovalTool,
 )
 from agenticos.security.approval import (
+    ApprovalCapacityError,
     ApprovalError,
     HumanApprovalManager,
     SQLiteExecutionApprovalStore,
@@ -574,6 +575,8 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             approval = manager.request(principal.principal_id, execution_request)
         except HTTPException:
             raise
+        except ApprovalCapacityError as exc:
+            raise HTTPException(status_code=429, detail="Pending sandbox approval capacity reached") from exc
         except (ValueError, TypeError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"review_id": approval["review_id"], "approval_token": approval["approval_token"], "status": "pending", "expires_in_seconds": 300}
