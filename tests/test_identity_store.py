@@ -193,3 +193,32 @@ def test_authentication_rejects_oversized_bearer_token_before_lookup(
     monkeypatch.setattr(store, "_connect", unexpected_database_lookup)
     oversized = "x" * (store.MAX_BEARER_TOKEN_LENGTH + 1)
     assert store.authenticate(oversized) is None
+
+
+def test_concurrent_token_rotation_allows_exactly_one_winner(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    store = SQLiteIdentityStore(tmp_path / "identity.sqlite3")
+    store.create_principal("alice")
+    old_id, old_token = store.issue_token("alice")
+    barrier = Barrier(8)
+
+    def rotate():
+        barrier.wait()
+        try:
+            return store.rotate_token(old_id)
+        except PermissionDenied:
+            return None
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        outcomes = list(executor.map(lambda _: rotate(), range(8)))
+
+    winners = [result for result in outcomes if result is not None]
+    assert len(winners) == 1
+    new_id, new_token = winners[0]
+    assert store.authenticate(old_token) is None
+    authenticated = store.authenticate(new_token)
+    assert authenticated is not None
+    assert authenticated.principal_id == "alice"
+    assert store.token_principal(new_id) == "alice"
