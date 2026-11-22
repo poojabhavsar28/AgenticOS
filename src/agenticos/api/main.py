@@ -268,7 +268,8 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             and (config.api_auth_token is not None or config.identity_admin_token is not None)
             and not is_human_approval_route
         ):
-            authorization = request.headers.get("authorization")
+            authorization_values = request.headers.getlist("authorization")
+            authorization = authorization_values[0] if len(authorization_values) == 1 else None
             scheme, separator, credential = (authorization or "").partition(" ")
             valid_bearer_credential = (
                 bool(separator)
