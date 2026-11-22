@@ -60,7 +60,7 @@ The current key file is protected by the same private data-directory boundary as
 - Support multiple independently authenticated principals without trusting caller-supplied principal IDs.
 - Store only secure token verifiers; use high-entropy token generation, constant-time verification, and a documented rotation path.
 - Support token rotation and revocation, including immediate invalidation of revoked credentials.
-- Newly issued and rotated administrator-managed tokens expire after 30 days by default; callers may set a shorter positive TTL through the identity-store API. Expired tokens fail authentication. Configured bootstrap credentials remain environment-managed and do not use this generated-token expiry policy.
+- Newly issued and rotated administrator-managed tokens expire after 30 days by default; callers may set a shorter positive TTL through the identity-store API; values exceeding SQLite's supported timestamp range are rejected. Expired tokens fail authentication. Configured bootstrap credentials remain environment-managed and do not use this generated-token expiry policy.
 - Keep requester and human-approver roles distinct; preserve the prohibition on self-approval.
 - Provide explicit bootstrap/admin setup without shipping default credentials.
 
