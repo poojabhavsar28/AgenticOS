@@ -253,3 +253,28 @@ def test_terminal_approval_history_is_pruned_after_retention_window(
     now[0] += manager.store.TERMINAL_RETENTION_SECONDS + 1
     manager.request("agent-3", request)
     assert manager.get_review(review_id) is None
+
+
+def test_concurrent_approval_consumption_succeeds_exactly_once(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    manager = make_manager(tmp_path)
+    request = SandboxExecutionRequest(source="print('single use')")
+    approval = manager.request("agent-1", request)
+    manager.approve(approval["review_id"], "human-admin")
+    barrier = Barrier(8)
+
+    def consume():
+        barrier.wait()
+        try:
+            manager.consume(approval["approval_token"], "agent-1", request)
+            return True
+        except ApprovalError:
+            return False
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        outcomes = list(executor.map(lambda _: consume(), range(8)))
+
+    assert outcomes.count(True) == 1
+    assert outcomes.count(False) == 7
