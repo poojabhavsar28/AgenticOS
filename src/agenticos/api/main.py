@@ -647,6 +647,8 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
                 payload.session_id, principal.principal_id, payload.workspace
             ):
                 raise HTTPException(status_code=404, detail="Session not found")
+            if principal is not None:
+                require_workspace_permission(request, payload.workspace, "read", "sessions")
             history = store.get_recent_messages(payload.session_id)
             project_items = store.get_project_context(payload.workspace)
             repository_items = (
@@ -699,6 +701,8 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
                 payload.session_id, principal.principal_id, payload.workspace
             ):
                 raise HTTPException(status_code=404, detail="Session not found")
+            if principal is not None:
+                require_workspace_permission(request, payload.workspace, "read", "sessions")
             history = store.get_recent_messages(payload.session_id)
             project_items = store.get_project_context(payload.workspace)
             repository_items = (
