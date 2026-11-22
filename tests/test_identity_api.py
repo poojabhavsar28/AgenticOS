@@ -526,6 +526,62 @@ def test_workspace_change_routes_require_workspace_grants(fake_model, tmp_path):
         assert (project / "note.txt").read_text(encoding="utf-8") == "approved"
 
 
+def test_workspace_context_repository_and_file_routes_require_grants(
+    fake_model, tmp_path
+):
+    project = tmp_path / "workspace-a"
+    project.mkdir()
+    (project / "readme.txt").write_text("workspace content", encoding="utf-8")
+    with TestClient(create_app(_settings(tmp_path), model_client=fake_model)) as client:
+        store = client.app.state.identity_store
+        store.create_principal("reader-writer")
+        _, token = store.issue_token("reader-writer")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        assert client.put(
+            "/v1/workspaces/workspace-a/context",
+            json={"source_key": "doc-1", "content": "secret"}, headers=headers,
+        ).status_code == 403
+        assert client.post(
+            "/v1/workspaces/workspace-a/repository-index", headers=headers,
+        ).status_code == 403
+        assert client.get(
+            "/v1/workspaces/workspace-a/repository-search?q=readme", headers=headers,
+        ).status_code == 403
+        assert client.get(
+            "/v1/workspaces/workspace-a/files", headers=headers,
+        ).status_code == 403
+        assert client.get(
+            "/v1/workspaces/workspace-a/files/readme.txt", headers=headers,
+        ).status_code == 403
+
+        store.grant("reader-writer", "workspace-a", "write", "workspace:context")
+        store.grant("reader-writer", "workspace-a", "write", "workspace:repository-index")
+        store.grant("reader-writer", "workspace-a", "read", "workspace:repository-index")
+        store.grant("reader-writer", "workspace-a", "read", "workspace:files")
+
+        saved = client.put(
+            "/v1/workspaces/workspace-a/context",
+            json={"source_key": "doc-1", "content": "secret"}, headers=headers,
+        )
+        assert saved.status_code == 200
+        indexed = client.post(
+            "/v1/workspaces/workspace-a/repository-index", headers=headers,
+        )
+        assert indexed.status_code == 200
+        assert client.get(
+            "/v1/workspaces/workspace-a/repository-search?q=readme", headers=headers,
+        ).status_code == 200
+        assert client.get(
+            "/v1/workspaces/workspace-a/files", headers=headers,
+        ).status_code == 200
+        read = client.get(
+            "/v1/workspaces/workspace-a/files/readme.txt", headers=headers,
+        )
+        assert read.status_code == 200
+        assert read.json()["content"] == "workspace content"
+
+
 async def _raise_unexpected_api_error():
     raise RuntimeError("simulated unexpected handler failure")
 
