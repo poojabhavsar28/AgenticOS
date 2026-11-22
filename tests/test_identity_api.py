@@ -240,3 +240,27 @@ def test_identity_admin_actions_are_written_to_tamper_evident_audit_log(
         }.issubset(actions)
         assert all(issued_token not in event.resource for event in semantic_events)
         assert client.app.state.audit_log.verify_integrity()
+
+
+
+def test_failed_identity_admin_operation_is_recorded_with_http_status(
+    fake_model, tmp_path
+):
+    with TestClient(create_app(_settings(tmp_path), model_client=fake_model)) as client:
+        admin = {"Authorization": "Bearer configured-admin-secret"}
+        response = client.delete(
+            "/v1/admin/tokens/nonexistent-token", headers=admin
+        )
+        assert response.status_code == 404
+
+        events = client.app.state.audit_log.events()
+        failed_request = [
+            event
+            for event in events
+            if event.resource == "/v1/admin/tokens/nonexistent-token"
+            and event.action == "DELETE"
+        ]
+        assert failed_request
+        assert failed_request[-1].principal_id == "local-admin"
+        assert failed_request[-1].outcome == "404"
+        assert client.app.state.audit_log.verify_integrity()
