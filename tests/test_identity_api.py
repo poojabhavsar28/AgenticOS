@@ -275,6 +275,31 @@ class _EchoTool:
         return {"echo": arguments}
 
 
+def test_concurrent_token_rotation_has_exactly_one_winner(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from agenticos.security.identity import SQLiteIdentityStore
+    from agenticos.security.policy import PermissionDenied
+
+    store = SQLiteIdentityStore(tmp_path / "identities.sqlite3")
+    store.create_principal("rotation-user")
+    token_id, original_token = store.issue_token("rotation-user")
+
+    def rotate():
+        try:
+            return store.rotate_token(token_id)
+        except PermissionDenied:
+            return None
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: rotate(), range(2)))
+
+    successful = [result for result in results if result is not None]
+    assert len(successful) == 1
+    assert store.authenticate(original_token) is None
+    assert store.authenticate(successful[0][1]).principal_id == "rotation-user"
+
+
 def test_identity_store_rejects_noncanonical_security_identifiers(tmp_path):
     from agenticos.security.identity import SQLiteIdentityStore
 
