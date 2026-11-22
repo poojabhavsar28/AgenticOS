@@ -226,6 +226,7 @@ def test_session_messages_are_principal_scoped(fake_model, tmp_path):
     )
     with TestClient(create_app(settings, model_client=fake_model)) as client:
         store = client.app.state.identity_store
+        memory = client.app.state.memory
         store.create_principal("alice")
         _, alice_token = store.issue_token("alice")
         alice = {"Authorization": f"Bearer {alice_token}"}
@@ -235,8 +236,8 @@ def test_session_messages_are_principal_scoped(fake_model, tmp_path):
 
         denied = client.get("/v1/sessions/session-a/messages", headers=alice)
         assert denied.status_code == 404
-        store.claim_session("session-a", "alice", "workspace-a")
-        store.append_message("session-a", "user", "alice private")
+        memory.claim_session("session-a", "alice", "workspace-a")
+        memory.append_message("session-a", "user", "alice private")
         assert client.get("/v1/sessions/session-a/messages", headers=alice).status_code == 200
         assert client.get("/v1/sessions/session-a/messages", headers=bob).status_code == 404
 
