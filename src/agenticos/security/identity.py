@@ -207,8 +207,14 @@ class SQLiteIdentityStore:
                 (principal_id, token_id),
             )
 
+    MAX_BEARER_TOKEN_LENGTH = 4096
+
     def authenticate(self, token: str | None) -> AuthenticatedPrincipal | None:
-        if not isinstance(token, str) or not token:
+        if (
+            not isinstance(token, str)
+            or not token
+            or len(token) > self.MAX_BEARER_TOKEN_LENGTH
+        ):
             return None
         supplied = hashlib.sha256(token.encode("utf-8")).digest()
         match: str | None = None
