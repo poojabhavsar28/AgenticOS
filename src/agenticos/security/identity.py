@@ -260,13 +260,11 @@ class SQLiteIdentityStore:
     ) -> tuple[str, str]:
         """Atomically revoke one token and issue its replacement for the same principal."""
         token_id = self._required(token_id, "token_id")
-        if not isinstance(ttl_seconds, int) or isinstance(ttl_seconds, bool) or ttl_seconds < 1:
-            raise ValueError("ttl_seconds must be a positive integer")
         new_token_id = uuid4().hex
         new_token = "agx_" + secrets.token_urlsafe(32)
         verifier = hashlib.sha256(new_token.encode("utf-8")).digest()
         now = int(time.time())
-        expires_at = now + ttl_seconds
+        expires_at = self._expiry_for_ttl(ttl_seconds, now)
         with self._connect() as connection:
             row = connection.execute(
                 """
