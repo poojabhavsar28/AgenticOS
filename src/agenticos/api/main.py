@@ -622,8 +622,24 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             return {"principal_id": "local-development"}
         return {"principal_id": principal.principal_id}
 
+    def require_run_owner(request: Request, snapshot: dict[str, object]) -> None:
+        principal = getattr(request.state, "principal", None)
+        if principal is None:
+            if config.api_auth_token is None and config.identity_admin_token is None:
+                return
+            raise HTTPException(status_code=401, detail="Authenticated principal required")
+        if principal.principal_id == config.identity_admin_principal and config.identity_admin_token:
+            return
+        if snapshot.get("principal_id") != principal.principal_id:
+            raise HTTPException(status_code=404, detail="Run not found")
+
     @app.post("/v1/runs", response_model=RunResponse)
     async def create_run(payload: RunRequest, request: Request) -> RunResponse:
+        principal = getattr(request.state, "principal", None)
+        if principal is not None:
+            require_workspace_permission(request, payload.workspace, "execute", "workflow:run")
+        elif config.api_auth_token or config.identity_admin_token:
+            raise HTTPException(status_code=401, detail="Authenticated principal required")
         try:
             resolve_workspace_path(config.workspace_root, payload.workspace)
             store = request.app.state.memory
@@ -637,7 +653,9 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             memory_context = build_memory_context(history, project_items, repository_items)
             store.append_message(payload.session_id, "user", payload.task)
             record = await request.app.state.execution.execute(
-                payload.task, memory_context=memory_context
+                payload.task, memory_context=memory_context,
+                workspace_id=payload.workspace,
+                principal_id=principal.principal_id if principal else None,
             )
         except WorkspaceBoundaryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -665,6 +683,11 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
 
     @app.post("/v1/runs/start", status_code=202)
     async def start_run(payload: RunRequest, request: Request) -> dict[str, str]:
+        principal = getattr(request.state, "principal", None)
+        if principal is not None:
+            require_workspace_permission(request, payload.workspace, "execute", "workflow:run")
+        elif config.api_auth_token or config.identity_admin_token:
+            raise HTTPException(status_code=401, detail="Authenticated principal required")
         try:
             resolve_workspace_path(config.workspace_root, payload.workspace)
             store = request.app.state.memory
@@ -678,7 +701,9 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             memory_context = build_memory_context(history, project_items, repository_items)
             store.append_message(payload.session_id, "user", payload.task)
             run_id = request.app.state.execution.start(
-                payload.task, memory_context=memory_context
+                payload.task, memory_context=memory_context,
+                workspace_id=payload.workspace,
+                principal_id=principal.principal_id if principal else None,
             )
         except WorkspaceBoundaryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -691,6 +716,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         snapshot = await request.app.state.execution.get_snapshot(run_id)
         if snapshot is None:
             raise HTTPException(status_code=404, detail="Run not found")
+        require_run_owner(request, snapshot)
         if snapshot.get("status") in {"completed", "failed", "cancelled"}:
             raise HTTPException(status_code=409, detail="Run is already terminal")
         accepted = await request.app.state.execution.cancel_run(run_id)
@@ -871,6 +897,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         snapshot = await request.app.state.execution.get_snapshot(run_id)
         if snapshot is None:
             raise HTTPException(status_code=404, detail="Run not found")
+        require_run_owner(request, snapshot)
         try:
             events = request.app.state.run_events.list_events(
                 run_id, after_event_id=after_event_id, limit=limit
@@ -893,6 +920,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         snapshot = await request.app.state.execution.get_snapshot(run_id)
         if snapshot is None:
             raise HTTPException(status_code=404, detail="Run not found")
+        require_run_owner(request, snapshot)
         try:
             after_id = max(0, int(request.headers.get("last-event-id", "0")))
         except ValueError as exc:
@@ -932,6 +960,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         snapshot = await request.app.state.execution.get_snapshot(run_id)
         if snapshot is None:
             raise HTTPException(status_code=404, detail="Run not found")
+        require_run_owner(request, snapshot)
         return snapshot
 
     return app
