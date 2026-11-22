@@ -734,7 +734,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
 
     @app.get("/v1/sessions/{session_id}/messages")
     async def get_session_messages(
-        session_id: str, request: Request, workspace_id: str, limit: int = 12
+        session_id: str, request: Request, workspace_id: str = "default", limit: int = 12
     ) -> list[dict[str, str]]:
         principal = getattr(request.state, "principal", None)
         if principal is not None and not request.app.state.memory.owns_session(
