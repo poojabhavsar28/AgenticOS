@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from agenticos.security.approval import (
+    ApprovalCapacityError,
     ApprovalError,
     HumanApprovalManager,
     SQLiteExecutionApprovalStore,
@@ -171,3 +172,44 @@ def test_approval_store_rejects_insecure_shared_directory(tmp_path):
 
     with pytest.raises(PermissionError, match="dedicated private directory"):
         SQLiteExecutionApprovalStore(shared_dir / "approvals.sqlite3")
+
+
+
+def test_pending_approval_queue_is_bounded_per_requester(tmp_path):
+    manager = make_manager(tmp_path)
+    request = SandboxExecutionRequest(source="pass")
+
+    for _ in range(manager.store.MAX_PENDING_PER_REQUESTER):
+        manager.request("agent-1", request)
+
+    with pytest.raises(ApprovalCapacityError, match="capacity"):
+        manager.request("agent-1", request)
+
+    # Capacity is scoped per requester, not a blanket lockout.
+    manager.request("agent-2", request)
+
+
+def test_pending_approval_queue_has_global_limit(tmp_path):
+    manager = make_manager(tmp_path)
+    request = SandboxExecutionRequest(source="pass")
+
+    for index in range(manager.store.MAX_PENDING_APPROVALS):
+        manager.request(f"agent-{index}", request)
+
+    with pytest.raises(ApprovalCapacityError, match="capacity"):
+        manager.request("another-agent", request)
+
+
+def test_expired_pending_approvals_are_reclaimed_when_queue_is_full(tmp_path, monkeypatch):
+    import agenticos.security.approval as approval_module
+
+    now = [1000.0]
+    monkeypatch.setattr(approval_module.time, "time", lambda: now[0])
+    manager = make_manager(tmp_path)
+    manager.store.MAX_PENDING_APPROVALS = 1
+    manager.request("agent-1", SandboxExecutionRequest(source="pass"), ttl_seconds=1)
+
+    now[0] = 1002.0
+    manager.request("agent-2", SandboxExecutionRequest(source="pass"))
+
+    assert [item["requester_id"] for item in manager.list_pending()] == ["agent-2"]
