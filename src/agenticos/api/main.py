@@ -311,6 +311,12 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             )
             raise HTTPException(status_code=403, detail="Identity administrator required")
 
+    def record_admin_intent(request: Request, action: str, resource: str) -> None:
+        """Persist intent before an administrative mutation can take effect."""
+        principal = getattr(request.state, "principal", None)
+        principal_id = principal.principal_id if principal is not None else "anonymous"
+        audit_log.record(principal_id, action, resource, "requested")
+
     def record_admin_audit(request: Request, action: str, resource: str) -> None:
         principal = getattr(request.state, "principal", None)
         principal_id = principal.principal_id if principal is not None else "anonymous"
@@ -322,6 +328,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         principal_id = payload.get("principal_id")
         if not isinstance(principal_id, str) or not principal_id.strip():
             raise HTTPException(status_code=422, detail="principal_id is required")
+        record_admin_intent(request, "identity.create_principal", f"principal:{principal_id}")
         try:
             request.app.state.identity_store.create_principal(principal_id)
         except ValueError as exc:
@@ -337,6 +344,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     @app.post("/v1/admin/principals/{principal_id}/tokens", status_code=201)
     async def admin_issue_token(principal_id: str, request: Request):
         require_identity_admin(request)
+        record_admin_intent(request, "identity.issue_token", f"principal:{principal_id}")
         try:
             token_id, token = request.app.state.identity_store.issue_token(principal_id)
         except (KeyError, PermissionError) as exc:
@@ -355,6 +363,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
                 status_code=409,
                 detail="Bootstrap administrator credentials are managed through IDENTITY_ADMIN_TOKEN",
             )
+        record_admin_intent(request, "identity.rotate_token", f"token:{token_id}")
         try:
             new_token_id, new_token = request.app.state.identity_store.rotate_token(token_id)
         except PermissionError as exc:
@@ -371,6 +380,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
                 status_code=409,
                 detail="Bootstrap administrator credentials are managed through IDENTITY_ADMIN_TOKEN",
             )
+        record_admin_intent(request, "identity.revoke_token", f"token:{token_id}")
         try:
             request.app.state.identity_store.revoke_token(token_id)
         except KeyError as exc:
@@ -389,6 +399,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
                 status_code=409,
                 detail="The bootstrap administrator cannot disable itself",
             )
+        record_admin_intent(request, "identity.set_principal_enabled", f"principal:{principal_id};enabled:{enabled}")
         try:
             request.app.state.identity_store.set_principal_enabled(principal_id, enabled)
         except KeyError as exc:
@@ -404,6 +415,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         action, resource = payload.get("action"), payload.get("resource")
         if not isinstance(action, str) or not isinstance(resource, str):
             raise HTTPException(status_code=422, detail="action and resource are required")
+        record_admin_intent(request, "identity.grant_workspace", f"principal:{principal_id};workspace:{workspace_id};action:{action};resource:{resource}")
         try:
             request.app.state.identity_store.grant(principal_id, workspace_id, action, resource)
         except KeyError as exc:
@@ -421,6 +433,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         action, resource = payload.get("action"), payload.get("resource")
         if not isinstance(action, str) or not isinstance(resource, str):
             raise HTTPException(status_code=422, detail="action and resource are required")
+        record_admin_intent(request, "identity.revoke_workspace", f"principal:{principal_id};workspace:{workspace_id};action:{action};resource:{resource}")
         try:
             request.app.state.identity_store.revoke_grant(principal_id, workspace_id, action, resource)
         except KeyError as exc:
