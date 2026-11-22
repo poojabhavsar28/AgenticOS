@@ -1,10 +1,12 @@
 # AgenticOS API Reference
 
-This is a route-family reference for the Phase 15 snapshot. The application is FastAPI-based; request and response schemas are defined in the source contracts and route handlers. Confirm exact field requirements and status codes from the generated OpenAPI document at `/openapi.json` on the running version before integrating a client.
+This route reference is checked against the FastAPI-generated OpenAPI schema by `tests/test_api_contract.py`. Request/response fields and validation constraints are defined by the live schema and source contracts; clients should still fetch `/openapi.json` from the exact deployed version before integration.
 
 ## Authentication
 
-Protected `/v1/*` routes require a bearer token in the Authorization header. Public health endpoints are `/health` and `/ready`. Administrative identity routes require the separately configured `IDENTITY_ADMIN_TOKEN`. Sandbox reviewer operations use the separately configured reviewer/approver identity flow. Do not reuse credentials across roles.
+When API authentication is configured, protected `/v1/*` routes require a bearer token in the `Authorization` header. The public health endpoints are `/health` and `/ready`. Identity administration routes additionally require a principal provisioned with the configured `IDENTITY_ADMIN_TOKEN`.
+
+Sandbox reviewer operations are a deliberate exception to the ordinary API bearer middleware: `GET /v1/sandbox/reviews`, `GET /v1/sandbox/reviews/{review_id}`, and `POST /v1/sandbox/approvals/{review_id}/approve` require the separate `X-Sandbox-Approval-Token` header with a `Bearer <credential>` value. The reviewer page is `GET /sandbox/review`. Requesting an approval at `POST /v1/sandbox/approvals` remains an ordinary authenticated requester operation. Do not reuse credentials across roles.
 
 ## Health and identity
 
@@ -50,7 +52,7 @@ Repository indexing skips hidden, binary, oversized, dependency, and cache files
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/v1/workspaces/{workspace}/files` | List bounded workspace files |
-| GET | `/v1/workspaces/{workspace}/files/{path}` | Read a UTF-8 text file |
+| GET | `/v1/workspaces/{workspace}/files/{relative_path}` | Read a UTF-8 text file |
 | POST | `/v1/workspaces/{workspace}/changes` | Stage a proposed file change |
 | GET | `/v1/workspaces/{workspace}/changes` | List pending staged changes |
 | POST | `/v1/workspaces/{workspace}/changes/{change_id}/approve` | Approve and apply a staged change |
