@@ -155,3 +155,20 @@ def test_sandbox_review_page_is_served_only_when_enabled(fake_model, tmp_path):
     )
     disabled = TestClient(create_app(disabled_settings, model_client=fake_model))
     assert disabled.get("/sandbox/review").status_code == 404
+
+
+
+def test_approval_api_returns_429_when_requester_queue_is_full(
+    fake_model, tmp_path
+):
+    client = make_sandbox_client(fake_model, tmp_path)
+    client.app.state.sandbox_approvals.store.MAX_PENDING_PER_REQUESTER = 1
+    headers = {"Authorization": "Bearer requester-secret"}
+    payload = {"request": {"source": "print('hello')"}}
+
+    first = client.post("/v1/sandbox/approvals", headers=headers, json=payload)
+    assert first.status_code == 201
+
+    second = client.post("/v1/sandbox/approvals", headers=headers, json=payload)
+    assert second.status_code == 429
+    assert second.json()["detail"] == "Pending sandbox approval capacity reached"
