@@ -43,9 +43,15 @@ The service identity must have modify access to create and update the SQLite dat
 
 The POSIX tests verify directory mode `0700`, database/sidecar mode `0600`, and rejection of a permissive custom directory. These checks do not establish protection against root/Administrator, filesystem snapshots, backups, or a compromised service account. Backups must inherit equivalent access restrictions.
 
+## Sandbox approval queue and retention
+
+Pending human-review requests are bounded to 100 globally and 10 per requester. Capacity checks and insertion run under a SQLite immediate write transaction so concurrent requests cannot exceed either limit. Expired pending or approved requests are marked expired and their stored source payload is cleared when a new request is created. Terminal approval metadata (expired, consumed, or revoked) is retained for 30 days, then pruned during new request creation. This bounds review-history growth during normal operation; pruning is opportunistic and occurs when a new approval request arrives.
+
 ## Audit integrity implementation
 
 The SQLite audit store now writes canonical, ordered events with sequence numbers, previous-event digests, and HMAC-SHA256 event authentication. The HMAC key must be at least 32 bytes. The API creates or loads a separate 32-byte key file beside the operations database, with owner-only permissions on POSIX, and rejects symlink/non-regular key paths. SQLite update/delete triggers provide an additional accidental-mutation guard; they are not treated as the cryptographic security boundary.
+
+An administrator-only verification endpoint is available at `GET /v1/admin/audit/verify`. It verifies the full chain and can compare the current head with an externally retained 64-character lowercase hexadecimal checkpoint using the `expected_head` query parameter. On success, it returns the new chain head after recording its own verification event; operators should persist that returned value in an independent trusted location for the next check. A checkpoint mismatch or chain-integrity failure returns HTTP 409. The endpoint does not expose audit event contents and requires the configured identity administrator.
 
 ### Verification and truncation boundary
 
