@@ -284,6 +284,12 @@ def test_authenticated_run_access_is_workspace_grant_and_owner_scoped(fake_model
         assert created.status_code == 200
         run_id = created.json()["run_id"]
         assert client.get(f"/v1/runs/{run_id}", headers=alice).status_code == 200
+        assert client.get(f"/v1/runs/{run_id}/events", headers=alice).status_code == 200
+        store.revoke_grant("alice", "workspace-a", "read", "workflow:run")
+        assert client.get(f"/v1/runs/{run_id}/events", headers=alice).status_code == 403
+        store.grant("alice", "workspace-a", "read", "workflow:run")
+        store.revoke_grant("alice", "workspace-a", "execute", "workflow:run")
+        assert client.post(f"/v1/runs/{run_id}/cancel", headers=alice).status_code == 403
 
         store.create_principal("bob")
         _, bob_token = store.issue_token("bob")
