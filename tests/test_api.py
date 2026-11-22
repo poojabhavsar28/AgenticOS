@@ -216,6 +216,40 @@ def test_async_run_can_be_cancelled_through_api(tmp_path) -> None:
         assert events[-1]["event_type"] == "cancelled"
 
 
+def test_authenticated_run_access_is_workspace_grant_and_owner_scoped(fake_model, tmp_path):
+    settings = Settings(
+        workspace_root=tmp_path,
+        memory_database_path=tmp_path / "memory.sqlite3",
+        operations_database_path=tmp_path / "operations.sqlite3",
+        api_auth_token="operator-secret",
+        identity_admin_token="admin-secret",
+    )
+    with TestClient(create_app(settings, model_client=fake_model)) as client:
+        store = client.app.state.identity_store
+        store.create_principal("alice")
+        _, alice_token = store.issue_token("alice")
+        alice = {"Authorization": f"Bearer {alice_token}"}
+        denied = client.post("/v1/runs", json={"task": "private", "workspace": "workspace-a"}, headers=alice)
+        assert denied.status_code == 403
+
+        store.grant("alice", "workspace-a", "execute", "workflow:run")
+        created = client.post(
+            "/v1/runs", json={"task": "private", "workspace": "workspace-a"}, headers=alice
+        )
+        assert created.status_code == 200
+        run_id = created.json()["run_id"]
+        assert client.get(f"/v1/runs/{run_id}", headers=alice).status_code == 200
+
+        store.create_principal("bob")
+        _, bob_token = store.issue_token("bob")
+        bob = {"Authorization": f"Bearer {bob_token}"}
+        assert client.get(f"/v1/runs/{run_id}", headers=bob).status_code == 404
+        assert client.get(f"/v1/runs/{run_id}/events", headers=bob).status_code == 404
+
+        admin = {"Authorization": "Bearer admin-secret"}
+        assert client.get(f"/v1/runs/{run_id}", headers=admin).status_code == 200
+
+
 def test_cancel_endpoint_rejects_unknown_and_terminal_runs(fake_model, tmp_path) -> None:
     client = make_client(fake_model, tmp_path)
     assert client.post("/v1/runs/missing/cancel").status_code == 404
