@@ -244,6 +244,52 @@ def test_identity_admin_actions_are_written_to_tamper_evident_audit_log(
 
 
 
+def test_admin_mutations_do_not_run_when_intent_audit_fails(
+    fake_model, tmp_path, monkeypatch
+):
+    with TestClient(
+        create_app(_settings(tmp_path), model_client=fake_model),
+        raise_server_exceptions=False,
+    ) as client:
+        audit_log = client.app.state.audit_log
+        original_record = audit_log.record
+
+        def fail_semantic_intent(principal_id, action, resource, outcome):
+            if action.startswith("identity.") and outcome == "requested":
+                raise OSError("simulated audit storage failure")
+            return original_record(principal_id, action, resource, outcome)
+
+        monkeypatch.setattr(audit_log, "record", fail_semantic_intent)
+        admin = {"Authorization": "Bearer configured-admin-secret"}
+
+        created = client.post(
+            "/v1/admin/principals",
+            json={"principal_id": "must-not-exist"},
+            headers=admin,
+        )
+        assert created.status_code == 500
+        connection = client.app.state.identity_store._connect()
+        try:
+            principal = connection.execute(
+                "SELECT principal_id FROM principals WHERE principal_id = ?",
+                ("must-not-exist",),
+            ).fetchone()
+        finally:
+            connection.close()
+        assert principal is None
+
+        client.app.state.identity_store.create_principal("grant-target")
+        grant = client.put(
+            "/v1/admin/principals/grant-target/workspaces/workspace-x/grants",
+            json={"action": "execute", "resource": "deploy"},
+            headers=admin,
+        )
+        assert grant.status_code == 500
+        assert not client.app.state.identity_store.is_allowed(
+            "grant-target", "workspace-x", "execute", "deploy"
+        )
+
+
 def test_failed_identity_admin_operation_is_recorded_with_http_status(
     fake_model, tmp_path
 ):
