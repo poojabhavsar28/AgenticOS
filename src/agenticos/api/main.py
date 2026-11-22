@@ -741,6 +741,8 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             session_id, principal.principal_id, workspace_id
         ):
             raise HTTPException(status_code=404, detail="Session not found")
+        if principal is not None:
+            require_workspace_permission(request, workspace_id, "read", "sessions")
         if principal is None and (config.api_auth_token or config.identity_admin_token):
             raise HTTPException(status_code=401, detail="Authenticated principal required")
         try:
