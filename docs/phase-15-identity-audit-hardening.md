@@ -45,7 +45,7 @@ The POSIX tests verify directory mode `0700`, database/sidecar mode `0600`, and 
 
 ## Sandbox approval queue and retention
 
-Pending human-review requests are bounded to 100 globally and 10 per requester. Capacity checks and insertion run under a SQLite immediate write transaction so concurrent requests cannot exceed either limit. Expired pending or approved requests are marked expired and their stored source payload is cleared when a new request is created. Terminal approval metadata (expired, consumed, or revoked) is retained for 30 days, then pruned during new request creation. This bounds review-history growth during normal operation; pruning is opportunistic and occurs when a new approval request arrives.
+Pending human-review requests are bounded to 100 globally and 10 per requester. Capacity checks and insertion run under a SQLite immediate write transaction so concurrent requests cannot exceed either limit. The HTTP approval-request endpoint returns 429 when either queue limit is reached. Expired pending or approved requests are marked expired and their stored source payload is cleared when a new request is created. Terminal approval metadata (expired, consumed, or revoked) is retained for 30 days, then pruned during new request creation. This bounds review-history growth during normal operation; pruning is opportunistic and occurs when a new approval request arrives.
 
 ## Audit integrity implementation
 
