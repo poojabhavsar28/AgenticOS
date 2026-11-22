@@ -32,6 +32,8 @@ class RunRecord:
     status: RunStatus
     created_at: str
     updated_at: str
+    workspace_id: str | None = None
+    principal_id: str | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
 
@@ -86,7 +88,10 @@ class ExecutionManager:
             data["duration_ms"] = progress.duration_ms
         self.event_store.append(progress.run_id, progress.event_type.value, data)
 
-    def start(self, task: str, memory_context: str = "") -> str:
+    def start(
+        self, task: str, memory_context: str = "", *,
+        workspace_id: str | None = None, principal_id: str | None = None,
+    ) -> str:
         """Schedule a run and return its ID without waiting for completion."""
         run_id = str(uuid4())
         cancellation_event = asyncio.Event()
@@ -97,6 +102,8 @@ class ExecutionManager:
                 memory_context=memory_context,
                 run_id=run_id,
                 cancellation_event=cancellation_event,
+                workspace_id=workspace_id,
+                principal_id=principal_id,
             )
         )
         self._run_tasks[run_id] = task_handle
@@ -152,6 +159,8 @@ class ExecutionManager:
         *,
         run_id: str | None = None,
         cancellation_event: asyncio.Event | None = None,
+        workspace_id: str | None = None,
+        principal_id: str | None = None,
     ) -> RunRecord:
         now = datetime.now(UTC).isoformat()
         record = RunRecord(
@@ -160,6 +169,8 @@ class ExecutionManager:
             status=RunStatus.QUEUED,
             created_at=now,
             updated_at=now,
+            workspace_id=workspace_id,
+            principal_id=principal_id,
         )
         cancellation_event = cancellation_event or asyncio.Event()
         self._cancellation_events[record.run_id] = cancellation_event
