@@ -965,6 +965,16 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         async def event_stream():
             cursor = after_id
             for _ in range(60):
+                if principal is not None and principal.principal_id != config.identity_admin_principal:
+                    try:
+                        identity_store.authorize(
+                            principal.principal_id,
+                            str(snapshot.get("workspace_id", "default")),
+                            "read",
+                            "workflow:run",
+                        )
+                    except (PermissionDenied, ValueError):
+                        break
                 events = request.app.state.run_events.list_events(
                     run_id, after_event_id=cursor, limit=100
                 )
