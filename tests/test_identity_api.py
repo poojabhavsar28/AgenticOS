@@ -362,7 +362,7 @@ def test_duplicate_bearer_secret_across_principals_fails_closed(tmp_path):
 
 @pytest.mark.parametrize(
     "configured_token",
-    ["", "token with spaces", "token\\twith-tab", "x" * 4097],
+    ["", "token with spaces", "token\twith-tab", "x" * 4097],
 )
 def test_configured_identity_token_rejects_invalid_credentials(
     tmp_path, configured_token
