@@ -286,7 +286,14 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
                 )
             request.state.principal = principal
             principal_id = principal.principal_id
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception:
+            if request.url.path.startswith("/v1/"):
+                audit_log.record(
+                    principal_id, request.method, request.url.path, "error"
+                )
+            raise
         if request.url.path.startswith("/v1/"):
             audit_log.record(
                 principal_id, request.method, request.url.path, str(response.status_code)
