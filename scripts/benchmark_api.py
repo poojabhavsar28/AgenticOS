@@ -107,7 +107,7 @@ def main() -> int:
             "max": round(max(latencies), 2) if latencies else 0.0,
         },
         "failure_types": sorted({item for item in failures}),
-        "note": (\n            "HTTP probe only; repeat with representative workloads before setting capacity limits."\n        ),
+        "note": "HTTP probe only; capacity requires representative workloads.",
     }
     print(json.dumps(report, indent=2))
     return 0 if not failures else 1
