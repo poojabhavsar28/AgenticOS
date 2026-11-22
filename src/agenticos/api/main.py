@@ -643,6 +643,10 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         try:
             resolve_workspace_path(config.workspace_root, payload.workspace)
             store = request.app.state.memory
+            if principal is not None and not store.claim_session(
+                payload.session_id, principal.principal_id, payload.workspace
+            ):
+                raise HTTPException(status_code=404, detail="Session not found")
             history = store.get_recent_messages(payload.session_id)
             project_items = store.get_project_context(payload.workspace)
             repository_items = (
@@ -691,6 +695,10 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         try:
             resolve_workspace_path(config.workspace_root, payload.workspace)
             store = request.app.state.memory
+            if principal is not None and not store.claim_session(
+                payload.session_id, principal.principal_id, payload.workspace
+            ):
+                raise HTTPException(status_code=404, detail="Session not found")
             history = store.get_recent_messages(payload.session_id)
             project_items = store.get_project_context(payload.workspace)
             repository_items = (
@@ -728,6 +736,13 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     async def get_session_messages(
         session_id: str, request: Request, limit: int = 12
     ) -> list[dict[str, str]]:
+        principal = getattr(request.state, "principal", None)
+        if principal is not None and not request.app.state.memory.owns_session(
+            session_id, principal.principal_id
+        ):
+            raise HTTPException(status_code=404, detail="Session not found")
+        if principal is None and (config.api_auth_token or config.identity_admin_token):
+            raise HTTPException(status_code=401, detail="Authenticated principal required")
         try:
             messages = request.app.state.memory.get_recent_messages(session_id, limit)
         except ValueError as exc:
