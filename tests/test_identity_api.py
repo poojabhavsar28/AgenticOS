@@ -275,6 +275,21 @@ class _EchoTool:
         return {"echo": arguments}
 
 
+def test_replacing_configured_token_revokes_previous_credential(tmp_path):
+    from agenticos.security.identity import SQLiteIdentityStore
+
+    store = SQLiteIdentityStore(tmp_path / "identities.sqlite3")
+    store.register_configured_token("operator", "old-configured-secret")
+    assert store.authenticate("old-configured-secret") is not None
+
+    store.register_configured_token("operator", "new-configured-secret")
+
+    assert store.authenticate("old-configured-secret") is None
+    authenticated = store.authenticate("new-configured-secret")
+    assert authenticated is not None
+    assert authenticated.principal_id == "operator"
+
+
 def test_concurrent_token_rotation_has_exactly_one_winner(tmp_path):
     from concurrent.futures import ThreadPoolExecutor
 
