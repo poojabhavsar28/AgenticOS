@@ -234,12 +234,21 @@ def test_session_messages_are_principal_scoped(fake_model, tmp_path):
         _, bob_token = store.issue_token("bob")
         bob = {"Authorization": f"Bearer {bob_token}"}
 
-        denied = client.get("/v1/sessions/session-a/messages", headers=alice)
+        denied = client.get(
+            "/v1/sessions/session-a/messages?workspace_id=workspace-a", headers=alice
+        )
         assert denied.status_code == 404
         memory.claim_session("session-a", "alice", "workspace-a")
         memory.append_message("session-a", "user", "alice private")
-        assert client.get("/v1/sessions/session-a/messages", headers=alice).status_code == 200
-        assert client.get("/v1/sessions/session-a/messages", headers=bob).status_code == 404
+        assert client.get(
+            "/v1/sessions/session-a/messages?workspace_id=workspace-a", headers=alice
+        ).status_code == 200
+        assert client.get(
+            "/v1/sessions/session-a/messages?workspace_id=workspace-b", headers=alice
+        ).status_code == 404
+        assert client.get(
+            "/v1/sessions/session-a/messages?workspace_id=workspace-a", headers=bob
+        ).status_code == 404
 
 
 def test_authenticated_run_access_is_workspace_grant_and_owner_scoped(fake_model, tmp_path):
