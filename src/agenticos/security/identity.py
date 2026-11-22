@@ -16,6 +16,8 @@ from agenticos.security.sqlite_storage import prepare_private_sqlite_database
 class SQLiteIdentityStore:
     """Persist principal state, one-way token verifiers, and exact workspace grants."""
 
+    DEFAULT_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
+
     def __init__(self, database_path: Path | str) -> None:
         self.database_path = prepare_private_sqlite_database(database_path)
         with self._connect() as connection:
@@ -31,7 +33,8 @@ class SQLiteIdentityStore:
                     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
                     verifier BLOB NOT NULL,
                     created_at INTEGER NOT NULL,
-                    revoked_at INTEGER
+                    revoked_at INTEGER,
+                    expires_at INTEGER
                 );
                 CREATE INDEX IF NOT EXISTS idx_identity_tokens_active
                     ON identity_tokens(revoked_at, principal_id);
@@ -49,6 +52,14 @@ class SQLiteIdentityStore:
                 );
                 """
             )
+            token_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(identity_tokens)")
+            }
+            if "expires_at" not in token_columns:
+                connection.execute(
+                    "ALTER TABLE identity_tokens ADD COLUMN expires_at INTEGER"
+                )
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path, timeout=10)
@@ -85,12 +96,18 @@ class SQLiteIdentityStore:
             if cursor.rowcount != 1:
                 raise KeyError(f"Unknown principal: {principal_id}")
 
-    def issue_token(self, principal_id: str) -> tuple[str, str]:
+    def issue_token(
+        self, principal_id: str, ttl_seconds: int = DEFAULT_TOKEN_TTL_SECONDS
+    ) -> tuple[str, str]:
         """Return (opaque token ID, bearer secret); the secret is returned only once."""
         principal_id = self._required(principal_id, "principal_id")
+        if not isinstance(ttl_seconds, int) or isinstance(ttl_seconds, bool) or ttl_seconds < 1:
+            raise ValueError("ttl_seconds must be a positive integer")
         token_id = uuid4().hex
         token = "agx_" + secrets.token_urlsafe(32)
         verifier = hashlib.sha256(token.encode("utf-8")).digest()
+        now = int(time.time())
+        expires_at = now + ttl_seconds
         with self._connect() as connection:
             principal = connection.execute(
                 "SELECT enabled FROM principals WHERE principal_id = ?",
@@ -102,12 +119,22 @@ class SQLiteIdentityStore:
                 )
             connection.execute(
                 """
-                INSERT INTO identity_tokens(token_id, principal_id, verifier, created_at)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO identity_tokens(
+                    token_id, principal_id, verifier, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?)
                 """,
-                (token_id, principal_id, verifier, int(time.time())),
+                (token_id, principal_id, verifier, now, expires_at),
             )
         return token_id, token
+
+    def token_expiry(self, token_id: str) -> int | None:
+        token_id = self._required(token_id, "token_id")
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT expires_at FROM identity_tokens WHERE token_id = ?",
+                (token_id,),
+            ).fetchone()
+        return None if row is None or row["expires_at"] is None else int(row["expires_at"])
 
     def register_configured_token(self, principal_id: str, token: str) -> None:
         """Register the configured credential and revoke its previous configured value."""
@@ -179,7 +206,9 @@ class SQLiteIdentityStore:
                 FROM identity_tokens AS t
                 JOIN principals AS p ON p.principal_id = t.principal_id
                 WHERE t.revoked_at IS NULL AND p.enabled = 1
-                """
+                  AND (t.expires_at IS NULL OR t.expires_at > ?)
+                """,
+                (int(time.time()),),
             ).fetchall()
         for row in rows:
             if hmac.compare_digest(bytes(row["verifier"]), supplied):
@@ -216,12 +245,18 @@ class SQLiteIdentityStore:
             if cursor.rowcount != 1:
                 raise KeyError(f"Unknown or already revoked token: {token_id}")
 
-    def rotate_token(self, token_id: str) -> tuple[str, str]:
+    def rotate_token(
+        self, token_id: str, ttl_seconds: int = DEFAULT_TOKEN_TTL_SECONDS
+    ) -> tuple[str, str]:
         """Atomically revoke one token and issue its replacement for the same principal."""
         token_id = self._required(token_id, "token_id")
+        if not isinstance(ttl_seconds, int) or isinstance(ttl_seconds, bool) or ttl_seconds < 1:
+            raise ValueError("ttl_seconds must be a positive integer")
         new_token_id = uuid4().hex
         new_token = "agx_" + secrets.token_urlsafe(32)
         verifier = hashlib.sha256(new_token.encode("utf-8")).digest()
+        now = int(time.time())
+        expires_at = now + ttl_seconds
         with self._connect() as connection:
             row = connection.execute(
                 """
@@ -252,10 +287,11 @@ class SQLiteIdentityStore:
                 )
             connection.execute(
                 """
-                INSERT INTO identity_tokens(token_id, principal_id, verifier, created_at)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO identity_tokens(
+                    token_id, principal_id, verifier, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?)
                 """,
-                (new_token_id, row["principal_id"], verifier, int(time.time())),
+                (new_token_id, row["principal_id"], verifier, now, expires_at),
             )
         return new_token_id, new_token
 
