@@ -300,6 +300,15 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             or principal is None
             or principal.principal_id != config.identity_admin_principal
         ):
+            principal_id = (
+                principal.principal_id if principal is not None else "anonymous"
+            )
+            audit_log.record(
+                principal_id,
+                "identity.admin_access_denied",
+                request.url.path,
+                "denied",
+            )
             raise HTTPException(status_code=403, detail="Identity administrator required")
 
     def record_admin_audit(request: Request, action: str, resource: str) -> None:
