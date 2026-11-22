@@ -275,6 +275,17 @@ class _EchoTool:
         return {"echo": arguments}
 
 
+def test_identity_store_rejects_noncanonical_security_identifiers(tmp_path):
+    from agenticos.security.identity import SQLiteIdentityStore
+
+    store = SQLiteIdentityStore(tmp_path / "identities.sqlite3")
+    for value in (" alice", "alice ", "workspace\n-a", "tool\tname"):
+        with pytest.raises(ValueError, match="canonical"):
+            store.create_principal(value)
+        with pytest.raises(ValueError, match="canonical"):
+            store.is_allowed("alice", value, "execute", "echo")
+
+
 def test_workspace_tool_api_enforces_exact_principal_and_workspace_grants(
     fake_model, tmp_path
 ):
