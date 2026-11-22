@@ -81,6 +81,14 @@ def test_identity_admin_can_manage_principals_tokens_and_workspace_grants(
         assert client.post(
             "/v1/admin/principals", json={"principal_id": "alice"}, headers=ordinary
         ).status_code == 403
+        denied_events = [
+            event
+            for event in client.app.state.audit_log.events()
+            if event.action == "identity.admin_access_denied"
+        ]
+        assert denied_events
+        assert denied_events[-1].principal_id == "operator"
+        assert denied_events[-1].outcome == "denied"
 
         created = client.post(
             "/v1/admin/principals", json={"principal_id": "alice"}, headers=admin
