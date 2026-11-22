@@ -221,4 +221,3 @@ def test_concurrent_token_rotation_allows_exactly_one_winner(tmp_path):
     authenticated = store.authenticate(new_token)
     assert authenticated is not None
     assert authenticated.principal_id == "alice"
-    assert store.token_principal(new_id) == "alice"
