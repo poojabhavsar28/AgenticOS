@@ -48,3 +48,18 @@ def test_project_context_is_upserted_and_workspace_scoped(tmp_path) -> None:
     assert alpha[0]["content"] == "updated"
     assert alpha[0]["metadata"] == {"kind": "guide"}
     assert store.get_project_context("beta")[0]["content"] == "other"
+
+
+def test_session_ownership_is_persistent_and_cannot_be_taken_over(tmp_path):
+    store = SQLiteMemoryStore(tmp_path / "memory.sqlite3")
+    assert store.claim_session("session-a", "alice", "workspace-a") is True
+    assert store.owns_session("session-a", "alice") is True
+    assert store.owns_session("session-a", "bob") is False
+    assert store.claim_session("session-a", "bob", "workspace-a") is False
+    assert store.claim_session("session-a", "alice", "workspace-b") is False
+
+
+def test_existing_unowned_session_cannot_be_claimed(tmp_path):
+    store = SQLiteMemoryStore(tmp_path / "memory.sqlite3")
+    store.append_message("legacy-session", "user", "legacy private message")
+    assert store.claim_session("legacy-session", "alice", "workspace-a") is False
