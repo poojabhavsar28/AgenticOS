@@ -17,6 +17,7 @@ class SQLiteIdentityStore:
     """Persist principal state, one-way token verifiers, and exact workspace grants."""
 
     DEFAULT_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
+    MAX_TOKEN_TTL_SECONDS = 90 * 24 * 60 * 60
 
     def __init__(self, database_path: Path | str) -> None:
         self.database_path = prepare_private_sqlite_database(database_path)
@@ -82,8 +83,11 @@ class SQLiteIdentityStore:
             not isinstance(ttl_seconds, int)
             or isinstance(ttl_seconds, bool)
             or ttl_seconds < 1
+            or ttl_seconds > SQLiteIdentityStore.MAX_TOKEN_TTL_SECONDS
         ):
-            raise ValueError("ttl_seconds must be a positive integer")
+            raise ValueError(
+                "ttl_seconds must be between 1 second and 90 days"
+            )
         if ttl_seconds > (2**63 - 1) - now:
             raise ValueError("ttl_seconds exceeds SQLite's supported timestamp range")
         return now + ttl_seconds
