@@ -194,13 +194,20 @@ class SQLiteIdentityStore:
                 raise PermissionDenied(
                     "Cannot rotate an unknown, revoked, or disabled credential"
                 )
-            connection.execute(
+            revoked = connection.execute(
                 """
                 UPDATE identity_tokens
                 SET revoked_at = ? WHERE token_id = ? AND revoked_at IS NULL
                 """,
                 (int(time.time()), token_id),
             )
+            # Another concurrent rotation/revocation may have consumed this
+            # token after the initial read. Only the request that atomically
+            # changes the active row may create a replacement credential.
+            if revoked.rowcount != 1:
+                raise PermissionDenied(
+                    "Cannot rotate a credential that was concurrently revoked or rotated"
+                )
             connection.execute(
                 """
                 INSERT INTO identity_tokens(token_id, principal_id, verifier, created_at)
