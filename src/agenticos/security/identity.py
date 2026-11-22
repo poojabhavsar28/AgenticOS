@@ -75,6 +75,16 @@ class SQLiteIdentityStore:
             raise ValueError(f"{field} must be a non-empty string")
         if value != value.strip() or any(ord(character) < 32 for character in value):
             raise ValueError(f"{field} must be canonical and contain no control characters")
+        maximum_lengths = {
+            "principal_id": 256,
+            "workspace_id": 256,
+            "action": 128,
+            "resource": 2048,
+            "token_id": 256,
+        }
+        maximum = maximum_lengths.get(field)
+        if maximum is not None and len(value) > maximum:
+            raise ValueError(f"{field} must not exceed {maximum} characters")
         return value
 
     @staticmethod
