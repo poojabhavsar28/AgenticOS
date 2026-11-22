@@ -98,3 +98,31 @@ def test_unknown_or_disabled_principal_cannot_receive_grants_or_tokens(tmp_path)
         store.issue_token("missing")
     with pytest.raises(KeyError):
         store.grant("missing", "workspace-a", "read", "files")
+
+
+
+def test_issued_token_expires_and_rotation_gets_a_fresh_lifetime(tmp_path):
+    import time
+
+    store = SQLiteIdentityStore(tmp_path / "identity.sqlite3")
+    store.create_principal("alice")
+    token_id, token = store.issue_token("alice", ttl_seconds=1)
+    expiry = store.token_expiry(token_id)
+    assert expiry is not None
+    assert expiry <= int(time.time()) + 1
+    time.sleep(1.05)
+    assert store.authenticate(token) is None
+
+    second_id, second_token = store.issue_token("alice", ttl_seconds=60)
+    replacement_id, replacement = store.rotate_token(second_id, ttl_seconds=120)
+    assert store.authenticate(second_token) is None
+    assert store.authenticate(replacement).principal_id == "alice"
+    assert store.token_expiry(replacement_id) >= int(time.time()) + 119
+
+
+def test_token_ttl_must_be_a_positive_integer(tmp_path):
+    store = SQLiteIdentityStore(tmp_path / "identity.sqlite3")
+    store.create_principal("alice")
+    for ttl in (0, -1, True, 1.5):
+        with pytest.raises(ValueError, match="ttl_seconds"):
+            store.issue_token("alice", ttl_seconds=ttl)
