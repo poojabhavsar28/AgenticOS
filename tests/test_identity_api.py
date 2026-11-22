@@ -434,3 +434,31 @@ def test_workspace_tool_api_enforces_exact_principal_and_workspace_grants(
 
         assert store.is_allowed("alice", "workspace-a", "execute", "echo")
         assert not store.is_allowed("alice", "workspace-b", "execute", "echo")
+
+
+
+async def _raise_unexpected_api_error():
+    raise RuntimeError("simulated unexpected handler failure")
+
+
+def test_unhandled_api_exception_is_written_to_audit_log(fake_model, tmp_path):
+    app = create_app(_settings(tmp_path), model_client=fake_model)
+    app.add_api_route("/v1/test/unexpected-error", _raise_unexpected_api_error)
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get(
+            "/v1/test/unexpected-error",
+            headers={"Authorization": "Bearer configured-operator-secret"},
+        )
+        assert response.status_code == 500
+        events = client.app.state.audit_log.events()
+        failure_events = [
+            event
+            for event in events
+            if event.resource == "/v1/test/unexpected-error"
+            and event.action == "GET"
+        ]
+        assert failure_events
+        assert failure_events[-1].principal_id == "operator"
+        assert failure_events[-1].outcome == "error"
+        assert client.app.state.audit_log.verify_integrity()
