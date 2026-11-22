@@ -112,6 +112,8 @@ def test_issued_token_expires_and_rotation_gets_a_fresh_lifetime(tmp_path):
     assert expiry <= int(time.time()) + 1
     time.sleep(1.05)
     assert store.authenticate(token) is None
+    with pytest.raises(PermissionDenied):
+        store.rotate_token(token_id)
 
     second_id, second_token = store.issue_token("alice", ttl_seconds=60)
     replacement_id, replacement = store.rotate_token(second_id, ttl_seconds=120)
@@ -126,3 +128,29 @@ def test_token_ttl_must_be_a_positive_integer(tmp_path):
     for ttl in (0, -1, True, 1.5):
         with pytest.raises(ValueError, match="ttl_seconds"):
             store.issue_token("alice", ttl_seconds=ttl)
+
+
+
+def test_existing_identity_database_is_migrated_with_expiry_column(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "legacy-identities.sqlite3"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE identity_tokens (
+                token_id TEXT PRIMARY KEY,
+                principal_id TEXT NOT NULL,
+                verifier BLOB NOT NULL,
+                created_at INTEGER NOT NULL,
+                revoked_at INTEGER
+            )
+            """
+        )
+
+    SQLiteIdentityStore(path)
+    with sqlite3.connect(path) as connection:
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(identity_tokens)")
+        }
+    assert "expires_at" in columns
