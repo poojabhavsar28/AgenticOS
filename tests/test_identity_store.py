@@ -130,8 +130,11 @@ def test_token_ttl_must_be_a_positive_integer(tmp_path):
             store.issue_token("alice", ttl_seconds=ttl)
 
     token_id, _ = store.issue_token("alice", ttl_seconds=60)
-    with pytest.raises(ValueError, match="SQLite"):
-        store.rotate_token(token_id, ttl_seconds=2**63)
+    for ttl in (SQLiteIdentityStore.MAX_TOKEN_TTL_SECONDS + 1, 2**63):
+        with pytest.raises(ValueError, match="ttl_seconds"):
+            store.issue_token("alice", ttl_seconds=ttl)
+        with pytest.raises(ValueError, match="ttl_seconds"):
+            store.rotate_token(token_id, ttl_seconds=ttl)
 
 
 
