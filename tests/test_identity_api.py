@@ -289,6 +289,17 @@ def test_workspace_tool_api_enforces_exact_principal_and_workspace_grants(
         client.app.state.workflow.tool_registry = registry
 
         store.grant("alice", "workspace-a", "execute", "echo")
+        store.create_principal("bob")
+        _, bob_token = store.issue_token("bob")
+        bob_headers = {"Authorization": f"Bearer {bob_token}"}
+
+        bob_denied = client.post(
+            "/v1/workspaces/workspace-a/tools/echo/execute",
+            json={"message": "another principal must not execute"},
+            headers=bob_headers,
+        )
+        assert bob_denied.status_code == 403
+
         allowed = client.post(
             "/v1/workspaces/workspace-a/tools/echo/execute",
             json={"message": "hello"},
