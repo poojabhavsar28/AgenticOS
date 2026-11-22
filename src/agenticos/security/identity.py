@@ -163,8 +163,16 @@ class SQLiteIdentityStore:
     def register_configured_token(self, principal_id: str, token: str) -> None:
         """Register the configured credential and revoke its previous configured value."""
         principal_id = self._required(principal_id, "principal_id")
-        if not isinstance(token, str) or not token.strip():
-            raise ValueError("Configured token must be non-empty")
+        if (
+            not isinstance(token, str)
+            or not token
+            or len(token) > self.MAX_BEARER_TOKEN_LENGTH
+            or any(character.isspace() for character in token)
+        ):
+            raise ValueError(
+                "Configured token must be non-empty, contain no whitespace, "
+                f"and not exceed {self.MAX_BEARER_TOKEN_LENGTH} characters"
+            )
         verifier = hashlib.sha256(token.encode("utf-8")).digest()
         now = int(time.time())
         with self._connect() as connection:
