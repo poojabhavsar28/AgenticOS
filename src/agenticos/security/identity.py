@@ -76,6 +76,18 @@ class SQLiteIdentityStore:
             raise ValueError(f"{field} must be canonical and contain no control characters")
         return value
 
+    @staticmethod
+    def _expiry_for_ttl(ttl_seconds: int, now: int) -> int:
+        if (
+            not isinstance(ttl_seconds, int)
+            or isinstance(ttl_seconds, bool)
+            or ttl_seconds < 1
+        ):
+            raise ValueError("ttl_seconds must be a positive integer")
+        if ttl_seconds > (2**63 - 1) - now:
+            raise ValueError("ttl_seconds exceeds SQLite's supported timestamp range")
+        return now + ttl_seconds
+
     def create_principal(self, principal_id: str) -> None:
         principal_id = self._required(principal_id, "principal_id")
         with self._connect() as connection:
@@ -101,13 +113,11 @@ class SQLiteIdentityStore:
     ) -> tuple[str, str]:
         """Return (opaque token ID, bearer secret); the secret is returned only once."""
         principal_id = self._required(principal_id, "principal_id")
-        if not isinstance(ttl_seconds, int) or isinstance(ttl_seconds, bool) or ttl_seconds < 1:
-            raise ValueError("ttl_seconds must be a positive integer")
         token_id = uuid4().hex
         token = "agx_" + secrets.token_urlsafe(32)
         verifier = hashlib.sha256(token.encode("utf-8")).digest()
         now = int(time.time())
-        expires_at = now + ttl_seconds
+        expires_at = self._expiry_for_ttl(ttl_seconds, now)
         with self._connect() as connection:
             principal = connection.execute(
                 "SELECT enabled FROM principals WHERE principal_id = ?",
