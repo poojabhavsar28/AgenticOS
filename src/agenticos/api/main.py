@@ -478,6 +478,20 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Sandbox review is not enabled")
         return SANDBOX_REVIEW_HTML
 
+    def require_workspace_permission(
+        request: Request, workspace_id: str, action: str, resource: str
+    ) -> None:
+        principal = getattr(request.state, "principal", None)
+        # Preserve the intentionally unauthenticated local-development mode.
+        if principal is None:
+            if config.api_auth_token is None and config.identity_admin_token is None:
+                return
+            raise HTTPException(status_code=401, detail="Authenticated principal required")
+        try:
+            identity_store.authorize(principal.principal_id, workspace_id, action, resource)
+        except (PermissionDenied, ValueError) as exc:
+            raise HTTPException(status_code=403, detail="Workspace permission required") from exc
+
     @app.get("/v1/sandbox/reviews")
     async def list_sandbox_reviews(request: Request):
         manager = request.app.state.sandbox_approvals
@@ -763,6 +777,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     async def stage_workspace_change(
         workspace: str, payload: WorkspaceStageRequest, request: Request
     ) -> WorkspaceChangeResponse:
+        require_workspace_permission(request, workspace, "write", "workspace:changes")
         try:
             change = request.app.state.workspace_files.stage_write(
                 workspace, payload.relative_path, payload.content
@@ -783,6 +798,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     async def list_workspace_changes(
         workspace: str, request: Request
     ) -> list[WorkspaceChangeResponse]:
+        require_workspace_permission(request, workspace, "read", "workspace:changes")
         try:
             changes = [
                 change
@@ -805,6 +821,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     async def approve_workspace_change(
         workspace: str, change_id: str, request: Request
     ) -> dict[str, str]:
+        require_workspace_permission(request, workspace, "write", "workspace:changes")
         service = request.app.state.workspace_files
         change = next(
             (
@@ -827,6 +844,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     async def reject_workspace_change(
         workspace: str, change_id: str, request: Request
     ) -> dict[str, str]:
+        require_workspace_permission(request, workspace, "write", "workspace:changes")
         service = request.app.state.workspace_files
         change = next(
             (
