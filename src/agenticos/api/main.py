@@ -270,9 +270,16 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         ):
             authorization = request.headers.get("authorization")
             scheme, separator, credential = (authorization or "").partition(" ")
+            valid_bearer_credential = (
+                bool(separator)
+                and scheme.lower() == "bearer"
+                and bool(credential)
+                and credential == credential.strip()
+                and not any(character.isspace() for character in credential)
+            )
             principal = (
                 identity_store.authenticate(credential)
-                if separator and scheme.lower() == "bearer"
+                if valid_bearer_credential
                 else None
             )
             if principal is None:
