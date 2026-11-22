@@ -53,8 +53,8 @@ def test_project_context_is_upserted_and_workspace_scoped(tmp_path) -> None:
 def test_session_ownership_is_persistent_and_cannot_be_taken_over(tmp_path):
     store = SQLiteMemoryStore(tmp_path / "memory.sqlite3")
     assert store.claim_session("session-a", "alice", "workspace-a") is True
-    assert store.owns_session("session-a", "alice") is True
-    assert store.owns_session("session-a", "bob") is False
+    assert store.owns_session("session-a", "alice", "workspace-a") is True
+    assert store.owns_session("session-a", "bob", "workspace-a") is False
     assert store.claim_session("session-a", "bob", "workspace-a") is False
     assert store.claim_session("session-a", "alice", "workspace-b") is False
 
