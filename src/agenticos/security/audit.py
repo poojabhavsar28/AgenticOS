@@ -192,8 +192,17 @@ class SQLiteAuditLog:
         self, principal_id: str, action: str, resource: str, outcome: str
     ) -> AuditEvent:
         values = (principal_id, action, resource, outcome)
-        if any(not isinstance(value, str) or not value.strip() for value in values):
-            raise ValueError("audit event fields must be non-empty strings")
+        limits = (256, 128, 2048, 128)
+        if any(
+            not isinstance(value, str)
+            or not value.strip()
+            or len(value) > limit
+            or any(ord(character) < 32 or ord(character) == 127 for character in value)
+            for value, limit in zip(values, limits, strict=True)
+        ):
+            raise ValueError(
+                "audit event fields must be non-empty, bounded, and contain no control characters"
+            )
         event = AuditEvent(
             principal_id=principal_id,
             action=action,
