@@ -59,8 +59,7 @@ def test_api_authentication_uses_persistent_identity_store(fake_model, tmp_path)
             "/v1/sessions/missing/messages",
             headers={"Authorization": "Bearer configured-operator-secret"},
         )
-        assert response.status_code == 200
-        assert response.json() == []
+        assert response.status_code == 404
         principal = client.app.state.identity_store.authenticate(
             "configured-operator-secret"
         )
@@ -76,8 +75,7 @@ def test_api_accepts_multiple_persistent_tokens_and_revocation(
         token_id, token = store.issue_token("operator")
         headers = {"Authorization": f"Bearer {token}"}
         response = client.get("/v1/sessions/missing/messages", headers=headers)
-        assert response.status_code == 200
-        assert response.json() == []
+        assert response.status_code == 404
 
         store.revoke_token(token_id)
         assert client.get("/v1/sessions/missing/messages", headers=headers).status_code == 401
@@ -90,16 +88,14 @@ def test_configured_identity_survives_application_restart(fake_model, tmp_path) 
             "/v1/sessions/missing/messages",
             headers={"Authorization": "Bearer configured-operator-secret"},
         )
-        assert response.status_code == 200
-        assert response.json() == []
+        assert response.status_code == 404
 
     with TestClient(create_app(settings, model_client=fake_model)) as second:
         response = second.get(
             "/v1/sessions/missing/messages",
             headers={"Authorization": "Bearer configured-operator-secret"},
         )
-        assert response.status_code == 200
-        assert response.json() == []
+        assert response.status_code == 404
 
 
 
