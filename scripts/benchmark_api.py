@@ -58,7 +58,9 @@ def main() -> int:
     failures: list[str] = []
     started = time.perf_counter()
 
-    def request(index: int) -> tuple[float, int | None, str | None]:
+    def request(
+        index: int, client: httpx.Client
+    ) -> tuple[float, int | None, str | None]:
         payload = (
             {"task": f"Benchmark smoke task {index}", "session_id": f"benchmark-{index}"}
             if args.mode == "run"
@@ -66,27 +68,31 @@ def main() -> int:
         )
         begin = time.perf_counter()
         try:
-            with httpx.Client(timeout=args.timeout) as client:
-                response = (
-                    client.post(url, json=payload, headers=headers)
-                    if payload is not None
-                    else client.get(url, headers=headers)
-                )
+            response = (
+                client.post(url, json=payload, headers=headers)
+                if payload is not None
+                else client.get(url, headers=headers)
+            )
             elapsed = (time.perf_counter() - begin) * 1000
             return elapsed, response.status_code, None
         except httpx.HTTPError as exc:
             elapsed = (time.perf_counter() - begin) * 1000
             return elapsed, None, type(exc).__name__
 
-    with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
-        futures = [pool.submit(request, index) for index in range(args.requests)]
-        for future in as_completed(futures):
-            elapsed, status, error = future.result()
-            latencies.append(elapsed)
-            if error:
-                failures.append(error)
-            elif status is None or not 200 <= status < 300:
-                failures.append(f"http_{status}")
+    # Reuse a thread-safe client so keep-alive connections are not repeatedly
+    # discarded and recreated for every request.
+    with httpx.Client(timeout=args.timeout) as client:
+        with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
+            futures = [
+                pool.submit(request, index, client) for index in range(args.requests)
+            ]
+            for future in as_completed(futures):
+                elapsed, status, error = future.result()
+                latencies.append(elapsed)
+                if error:
+                    failures.append(error)
+                elif status is None or not 200 <= status < 300:
+                    failures.append(f"http_{status}")
 
     duration = time.perf_counter() - started
     successes = len(latencies) - len(failures)
