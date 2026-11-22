@@ -172,3 +172,32 @@ def test_approval_api_returns_429_when_requester_queue_is_full(
     second = client.post("/v1/sandbox/approvals", headers=headers, json=payload)
     assert second.status_code == 429
     assert second.json()["detail"] == "Pending sandbox approval capacity reached"
+
+
+def test_requester_credential_cannot_access_human_reviewer_routes(
+    fake_model, tmp_path
+):
+    client = make_sandbox_client(fake_model, tmp_path)
+    requester_headers = {"X-Sandbox-Approval-Token": "Bearer requester-secret"}
+
+    queue = client.get("/v1/sandbox/reviews", headers=requester_headers)
+    assert queue.status_code == 401
+
+    created = client.post(
+        "/v1/sandbox/approvals",
+        headers={"Authorization": "Bearer requester-secret"},
+        json={"request": {"source": "print('review me')"}},
+    )
+    assert created.status_code == 201
+    review_id = created.json()["review_id"]
+
+    inspect = client.get(
+        f"/v1/sandbox/reviews/{review_id}", headers=requester_headers
+    )
+    assert inspect.status_code == 401
+
+    approve = client.post(
+        f"/v1/sandbox/approvals/{review_id}/approve",
+        headers=requester_headers,
+    )
+    assert approve.status_code == 401
