@@ -238,11 +238,9 @@ class SQLiteIdentityStore:
             cursor = connection.execute(
                 """
                 UPDATE identity_tokens
-                SET revoked_at = ?
-                WHERE token_id = ? AND revoked_at IS NULL
-                  AND (expires_at IS NULL OR expires_at > ?)
+                SET revoked_at = ? WHERE token_id = ? AND revoked_at IS NULL
                 """,
-                (now, token_id, now),
+                (int(time.time()), token_id),
             )
             if cursor.rowcount != 1:
                 raise KeyError(f"Unknown or already revoked token: {token_id}")
@@ -277,9 +275,11 @@ class SQLiteIdentityStore:
             revoked = connection.execute(
                 """
                 UPDATE identity_tokens
-                SET revoked_at = ? WHERE token_id = ? AND revoked_at IS NULL
+                SET revoked_at = ?
+                WHERE token_id = ? AND revoked_at IS NULL
+                  AND (expires_at IS NULL OR expires_at > ?)
                 """,
-                (int(time.time()), token_id),
+                (now, token_id, now),
             )
             # Another concurrent rotation/revocation may have consumed this
             # token after the initial read. Only the request that atomically
