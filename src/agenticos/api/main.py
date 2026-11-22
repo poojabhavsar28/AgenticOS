@@ -302,6 +302,11 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         ):
             raise HTTPException(status_code=403, detail="Identity administrator required")
 
+    def record_admin_audit(request: Request, action: str, resource: str) -> None:
+        principal = getattr(request.state, "principal", None)
+        principal_id = principal.principal_id if principal is not None else "anonymous"
+        audit_log.record(principal_id, action, resource, "success")
+
     @app.post("/v1/admin/principals", status_code=201)
     async def admin_create_principal(payload: dict[str, object], request: Request):
         require_identity_admin(request)
@@ -317,6 +322,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             if isinstance(exc, sqlite3.IntegrityError):
                 raise HTTPException(status_code=409, detail="Principal already exists") from exc
             raise
+        record_admin_audit(request, "identity.create_principal", f"principal:{principal_id.strip()}")
         return {"principal_id": principal_id.strip(), "status": "created"}
 
     @app.post("/v1/admin/principals/{principal_id}/tokens", status_code=201)
@@ -326,6 +332,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             token_id, token = request.app.state.identity_store.issue_token(principal_id)
         except (KeyError, PermissionError) as exc:
             raise HTTPException(status_code=404, detail="Principal not found or disabled") from exc
+        record_admin_audit(request, "identity.issue_token", f"principal:{principal_id};token:{token_id}")
         return {"token_id": token_id, "token": token}
 
     @app.post("/v1/admin/tokens/{token_id}/rotate")
@@ -343,6 +350,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             new_token_id, new_token = request.app.state.identity_store.rotate_token(token_id)
         except PermissionError as exc:
             raise HTTPException(status_code=404, detail="Active token not found") from exc
+        record_admin_audit(request, "identity.rotate_token", f"token:{token_id};replacement:{new_token_id}")
         return {"token_id": new_token_id, "token": new_token, "status": "rotated"}
 
     @app.delete("/v1/admin/tokens/{token_id}")
@@ -358,6 +366,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             request.app.state.identity_store.revoke_token(token_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Active token not found") from exc
+        record_admin_audit(request, "identity.revoke_token", f"token:{token_id}")
         return {"token_id": token_id, "status": "revoked"}
 
     @app.patch("/v1/admin/principals/{principal_id}")
@@ -375,6 +384,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             request.app.state.identity_store.set_principal_enabled(principal_id, enabled)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Principal not found") from exc
+        record_admin_audit(request, "identity.set_principal_enabled", f"principal:{principal_id};enabled:{enabled}")
         return {"principal_id": principal_id, "enabled": enabled}
 
     @app.put("/v1/admin/principals/{principal_id}/workspaces/{workspace_id}/grants")
@@ -391,6 +401,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Principal not found") from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        record_admin_audit(request, "identity.grant_workspace", f"principal:{principal_id};workspace:{workspace_id};action:{action};resource:{resource}")
         return {"principal_id": principal_id, "workspace_id": workspace_id, "action": action, "resource": resource, "status": "granted"}
 
     @app.delete("/v1/admin/principals/{principal_id}/workspaces/{workspace_id}/grants")
@@ -407,6 +418,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Grant not found") from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        record_admin_audit(request, "identity.revoke_workspace", f"principal:{principal_id};workspace:{workspace_id};action:{action};resource:{resource}")
         return {"principal_id": principal_id, "workspace_id": workspace_id, "status": "revoked"}
 
     @app.get("/sandbox/review", response_class=HTMLResponse)
