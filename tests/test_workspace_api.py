@@ -80,3 +80,23 @@ def test_workspace_api_rejects_path_escape_and_unknown_approval(
         "/v1/workspaces/demo/changes/not-a-change/approve"
     )
     assert missing.status_code == 404
+
+
+def test_workspace_api_cannot_read_sibling_workspace_through_encoded_traversal(
+    fake_model, tmp_path: Path
+) -> None:
+    first = tmp_path / "project-a"
+    second = tmp_path / "project-b"
+    first.mkdir()
+    second.mkdir()
+    secret = second / "secret.txt"
+    secret.write_text("private workspace data", encoding="utf-8")
+    client = make_workspace_client(fake_model, tmp_path)
+
+    response = client.get(
+        "/v1/workspaces/project-a/files/%2E%2E%2Fproject-b%2Fsecret.txt"
+    )
+
+    assert response.status_code == 422
+    assert "outside the selected workspace" in response.json()["detail"]
+    assert secret.read_text(encoding="utf-8") == "private workspace data"
