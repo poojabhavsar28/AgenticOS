@@ -275,6 +275,16 @@ class _EchoTool:
         return {"echo": arguments}
 
 
+def test_duplicate_bearer_secret_across_principals_fails_closed(tmp_path):
+    from agenticos.security.identity import SQLiteIdentityStore
+
+    store = SQLiteIdentityStore(tmp_path / "identities.sqlite3")
+    store.register_configured_token("ordinary-user", "shared-secret")
+    store.register_configured_token("administrator", "shared-secret")
+
+    assert store.authenticate("shared-secret") is None
+
+
 def test_replacing_configured_token_revokes_previous_credential(tmp_path):
     from agenticos.security.identity import SQLiteIdentityStore
 
