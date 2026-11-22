@@ -129,3 +129,23 @@ def test_sqlite_audit_chain_creates_and_reuses_default_key(tmp_path) -> None:
     assert (tmp_path / "audit.sqlite3.audit.key").is_file()
 
 
+
+
+
+def test_sqlite_audit_log_rejects_oversized_or_control_character_fields(tmp_path):
+    audit = SQLiteAuditLog(tmp_path / "audit.sqlite3", signing_key=b"x" * 32)
+    invalid_events = [
+        ("principal\nforged", "read", "resource", "success"),
+        ("principal", "read\tforged", "resource", "success"),
+        ("principal", "read", "resource\x7fforged", "success"),
+        ("p" * 257, "read", "resource", "success"),
+        ("principal", "a" * 129, "resource", "success"),
+        ("principal", "read", "r" * 2049, "success"),
+        ("principal", "read", "resource", "s" * 129),
+    ]
+    for event in invalid_events:
+        with pytest.raises(ValueError, match="audit event fields"):
+            audit.record(*event)
+
+    audit.record("principal", "read", "resource", "success")
+    assert audit.verify_integrity()
