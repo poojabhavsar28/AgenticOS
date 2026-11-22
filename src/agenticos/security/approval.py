@@ -27,6 +27,7 @@ class SQLiteExecutionApprovalStore:
 
     MAX_PENDING_APPROVALS = 100
     MAX_PENDING_PER_REQUESTER = 10
+    TERMINAL_RETENTION_SECONDS = 30 * 24 * 60 * 60
 
     def __init__(self, database_path: Path | str) -> None:
         self.database_path = prepare_private_sqlite_database(database_path)
@@ -108,8 +109,14 @@ class SQLiteExecutionApprovalStore:
             connection.execute(
                 """UPDATE sandbox_execution_approvals
                    SET status = 'expired', request_json = NULL
-                   WHERE status = 'pending' AND expires_at <= ?""",
+                   WHERE status IN ('pending', 'approved') AND expires_at <= ?""",
                 (now,),
+            )
+            connection.execute(
+                """DELETE FROM sandbox_execution_approvals
+                   WHERE status IN ('expired', 'consumed', 'revoked')
+                     AND created_at <= ?""",
+                (now - self.TERMINAL_RETENTION_SECONDS,),
             )
             total_pending = connection.execute(
                 "SELECT COUNT(*) FROM sandbox_execution_approvals WHERE status = 'pending'"
